@@ -61,9 +61,9 @@ const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName:
   { code: "zh", label: "Chinese", nativeName: "CN" },
 ];
 const greetings = [
-  "...มาแล้วเหรอ ชิ ฉันไม่ได้รอเธอสักหน่อย",
-  "...เงียบอะไรอยู่ล่ะ ตาบ้า จะคุยก็คุยสิ",
-  "...มีเรื่องจะเล่าก็เล่ามา ไม่ได้อยากฟังเป็นพิเศษหรอกนะ",
+  "มาแล้ว? ว่ามา มีอะไร",
+  "ถ้าจะคุยก็พูดตรง ๆ",
+  "มีเรื่องอะไรก็พูดมา อย่าอ้อมค้อม",
 ];
 const greeting = (): Message => historyMessage("vivian", greetings[Math.floor(Math.random() * greetings.length)]);
 const GREETING_PENDING = "Vivian กำลังคิดว่าจะกวนคุณยังไง...";
