@@ -1,14 +1,9 @@
 import type { User } from "@supabase/supabase-js";
 
-// Authorization uses the Auth server's verified user record, not user_metadata.
-const allowedEmails = new Set([
-  "suphloeksangko@gmail.com",
-  "duckchan690@gmail.com",
-]);
-
+// Temporary hackathon access: allow any Supabase-authenticated account with a
+// confirmed email. Keep rejecting anonymous and unverified identities.
 export function isAllowedUser(user: Pick<User, "email" | "email_confirmed_at" | "is_anonymous"> | null): boolean {
-  return Boolean(user && !user.is_anonymous && user.email_confirmed_at &&
-    allowedEmails.has(user.email?.trim().toLowerCase() ?? ""));
+  return Boolean(user && !user.is_anonymous && user.email?.trim() && user.email_confirmed_at);
 }
 
 export function isSameOriginMutation(request: Request): boolean {

@@ -8,7 +8,7 @@ export const verifier = "local-test-pkce-verifier";
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
 
 export function session(kind, expiresAt = Math.floor(Date.now() / 1000) + 3600) {
-  const user = { id: kind === "second" ? "00000000-0000-0000-0000-000000000002" : "00000000-0000-0000-0000-000000000001", aud: "authenticated", email: emails[kind], email_confirmed_at: kind === "unverified" ? null : "2026-10-02T00:00:00Z", created_at: "2026-10-02T00:00:00Z", app_metadata: { provider: "google", providers: ["google"] }, user_metadata: {}, identities: [], is_anonymous: false };
+  const user = { id: kind === "second" ? "00000000-0000-0000-0000-000000000002" : "00000000-0000-0000-0000-000000000001", aud: "authenticated", email: emails[kind], email_confirmed_at: kind === "unverified" || kind === "denied" ? null : "2026-10-02T00:00:00Z", created_at: "2026-10-02T00:00:00Z", app_metadata: { provider: "google", providers: ["google"] }, user_metadata: {}, identities: [], is_anonymous: false };
   return { access_token: `${encode({ alg: "HS256", typ: "JWT" })}.${encode({ sub: user.id, exp: expiresAt, email: user.email, kind })}.test-signature`, refresh_token: `refresh-${kind}`, expires_in: 3600, expires_at: expiresAt, token_type: "bearer", user };
 }
 
