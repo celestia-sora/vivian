@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAuthConfiguration } from "@/lib/auth/config";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "@/lib/auth/cookie-config";
 
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   let response = NextResponse.next({ request });
@@ -10,7 +11,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (!configuration) return response;
   const supabase = createServerClient(configuration.url, configuration.publishableKey, {
     global: { fetch: (input, init) => fetch(input, { ...init, cache: "no-store", signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(8000)]) : AbortSignal.timeout(8000) }) },
-    cookieOptions: { sameSite: "lax", secure: request.nextUrl.protocol === "https:", path: "/" },
+    cookieOptions: { sameSite: "lax", secure: request.nextUrl.protocol === "https:", path: "/", maxAge: SESSION_COOKIE_MAX_AGE_SECONDS },
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headers) => {

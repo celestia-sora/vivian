@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { cache } from "react";
 import { getAuthConfiguration } from "./config";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "./cookie-config";
 import { isAllowedUser, isSameOriginMutation } from "./policy";
 
 export async function createAuthServerClient(): Promise<SupabaseClient | null> {
@@ -22,7 +23,7 @@ export async function createAuthServerClient(): Promise<SupabaseClient | null> {
           : AbortSignal.timeout(8000),
       }),
     },
-    cookieOptions: { sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/" },
+    cookieOptions: { sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: SESSION_COOKIE_MAX_AGE_SECONDS },
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (cookiesToSet) => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { SESSION_COOKIE_MAX_AGE_SECONDS } from "@/lib/auth/cookie-config";
 import { useCallback, useState } from "react";
 import type { AuthConfiguration } from "@/lib/auth/config";
 
@@ -34,7 +35,14 @@ export default function LoginCard({ configuration, error }: LoginCardProps): Rea
     setConnecting(true);
     setLoginError(null);
     try {
-      const supabase = createBrowserClient(configuration.url, configuration.publishableKey);
+      const supabase = createBrowserClient(configuration.url, configuration.publishableKey, {
+        cookieOptions: {
+          maxAge: SESSION_COOKIE_MAX_AGE_SECONDS,
+          sameSite: "lax",
+          secure: window.location.protocol === "https:",
+          path: "/",
+        },
+      });
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
