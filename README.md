@@ -3,7 +3,7 @@
 Meet Vivian, a cool-headed yandere AI companion with her own agenda. She speaks directly, pays close attention, and can show an intense, possessive attachment when the moment calls for it. She chats naturally, remembers things, sees shared pictures, and chooses her own responses.
 
 - **Live app:** [vivianlabs.vercel.app](https://vivianlabs.vercel.app)
-- **Alpha test:** Open for two weeks, October 24–November 7, 2026.
+- **Alpha test:** Open through November 13, 2026.
 - **Source code:** [github.com/celestial-sora/ai-waifu](https://github.com/celestial-sora/ai-waifu)
 - **Built with:** Next.js, React, TypeScript, Supabase, and PixiJS
 
