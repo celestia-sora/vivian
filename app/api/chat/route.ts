@@ -113,7 +113,7 @@ function compactGroqMessages(messages: ProviderMessage[]): ProviderMessage[] {
         role: "system" as const,
         content: system.content.length <= 7000
           ? system.content
-          : `${system.content.slice(0, 4800)}\\n\\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\\n\\n${system.content.slice(-1900)}`,
+          : `${system.content.slice(0, 4800)}\n\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\n\n${system.content.slice(-1900)}`,
       }
     : null;
   const compactDialogue = dialogue.map((message) => ({
