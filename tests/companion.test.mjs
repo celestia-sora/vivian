@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyConversationTurn, defaultCompanionState, decayCompanionState, normalizeMood } from "../lib/companion.ts";
+import { applyConversationTurn, companionPromptBlock, defaultCompanionState, decayCompanionState, normalizeMood } from "../lib/companion.ts";
 
 test("legacy moods migrate without resetting relationship or memory", () => {
   const saved = { ...defaultCompanionState(), affinity: 82, trust: 73, familiarity: 64, mood: "tsundere", conversationSummary: "ผู้ใช้ชอบชา" };
@@ -42,4 +42,14 @@ test("idle banter does not increase closeness and intense moods still decay", ()
   const faded = decayCompanionState(next, Date.parse(next.lastInteractionAt) + 24 * 3_600_000);
   assert.equal(faded.mood, "calm");
   assert.equal(faded.affinity, state.affinity);
+});
+
+test("relationship prompt gives Vivian initiative without inventing closeness", () => {
+  const early = companionPromptBlock(defaultCompanionState());
+  assert.match(early, /ยังรู้จักกันไม่นาน: Vivian ยังมีความเห็นและริเริ่มได้/);
+  assert.match(early, /ไม่ต้องรอให้ผู้ใช้กำหนดทุกจังหวะ/);
+  assert.match(early, /อย่าจบทุกข้อความด้วยคำถาม/);
+
+  const close = companionPromptBlock({ ...defaultCompanionState(), affinity: 82 });
+  assert.match(close, /คุ้นเคยมาก: เริ่มหัวข้อ/);
 });

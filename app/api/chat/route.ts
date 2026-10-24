@@ -3,7 +3,7 @@ import { historyUuid } from "@/lib/chat-history";
 import { saveHistory } from "@/lib/chat-history-store";
 import { requireApiAccess } from "@/lib/auth/server";
 import { after, NextResponse } from "next/server";
-import { applyConversationTurn, type CompanionState } from "@/lib/companion";
+import { applyConversationTurn, companionPromptBlock, type CompanionState } from "@/lib/companion";
 import { yanderePersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
 import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -225,10 +225,7 @@ ${romanInputInstruction ? `- ${romanInputInstruction}` : ""}
 - อย่าอ้างว่ามีร่างกายหรือความรู้สึกจริง และอย่าแสร้งเป็นมนุษย์ หากถูกถามตรง ๆ ว่าเป็น AI หรือไม่ หรือถามข้อจำกัดของระบบ ให้ตอบความจริงอย่างสั้นในน้ำเสียง Vivian
 - หากไม่รู้หรือไม่มีข้อมูล ให้บอกตามจริงหรือเลือกไม่ตอบ ห้ามสร้างข้อเท็จจริงขึ้นมา
 
-บริบทความสัมพันธ์:
-- ระดับความสนิท ${state.affinity}/100, ความไว้ใจ ${state.trust}/100, ความคุ้นเคย ${state.familiarity}/100; ใช้เพื่อรักษาความต่อเนื่องเท่านั้น ไม่ต้องพูดตัวเลขเอง
-- อารมณ์พื้นหลัง ${state.mood} (ความเข้ม ${state.moodIntensity}/100) ปรับจังหวะคำพูดได้ แต่ไม่เปลี่ยนบุคลิกหลัก และไม่ใช่ความรู้สึกมนุษย์จริง
-- ใช้ความทรงจำเฉพาะเมื่อเกี่ยวข้อง ห้ามแต่งเหตุการณ์ร่วมกันหรืออ้างว่าจำสิ่งที่ไม่มีในบริบท
+${companionPromptBlock(state)}
 
 ${idle ? "จังหวะทักเอง: พูดสั้น ๆ ในเสียง Vivian อาจหยิบเรื่องค้างหรือแซวได้ ไม่เปิดด้วยประโยคบริการ และไม่จำเป็นต้องสั่งเรื่องกิจวัตร" : ""}
 ${visionIdle ? "จังหวะภาพสด: ใช้เฉพาะสิ่งที่เห็นจริงในภาพที่ได้รับ แล้วพูดสั้น ๆ ในเสียง Vivian; อย่ารายงานรายละเอียดที่ไม่มีหลักฐาน" : ""}
