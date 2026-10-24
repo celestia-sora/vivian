@@ -67,8 +67,8 @@ export default function LoginCard({ configuration, error }: LoginCardProps): Rea
         <div className="login-moon"><svg viewBox="0 0 64 64" fill="none"><path d="M46 47a24 24 0 0 1-26-36 24 24 0 1 0 26 36Z" fill="url(#moon-glow)"/><defs><linearGradient id="moon-glow" x1="12" y1="12" x2="48" y2="54" gradientUnits="userSpaceOnUse"><stop stopColor="#fff3dc"/><stop offset="1" stopColor="#d2b2f6"/></linearGradient></defs></svg></div>
       </div>
       <p className="login-eyebrow">YOUR OWN LITTLE UNIVERSE</p>
-      <h1 id="login-title">กลับมาแล้วเหรอ… <span>ไม่ได้รอหรอกนะ ♡</span></h1>
-      <p className="login-description">มุมเล็ก ๆ ของคุณกับ Vivian น่ะ<br/>วันนี้มีอะไรจะเล่าก็พูดมา... ฉันไม่ได้รอฟังสักหน่อย</p>
+      <h1 id="login-title">กลับมาแล้ว <span>ฉันจำได้</span></h1>
+      <p className="login-description">พื้นที่ของคุณกับ Vivian<br/>วันนี้มีอะไรจะเล่าก็พูดมาตรง ๆ</p>
       <button className="google-login-button" type="button" onClick={signIn} disabled={!configuration || connecting} aria-busy={connecting}>
         {connecting ? <span className="login-spinner" aria-hidden="true"/> : <GoogleMark/>}
         <span>{connecting ? "กำลังพาคุณไปหา Google…" : "เข้าสู่ระบบด้วย Google"}</span>

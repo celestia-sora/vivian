@@ -1,6 +1,6 @@
 # Vivian AI Companion
 
-Meet Vivian, a sharp-tongued tsundere AI companion with her own agenda (˶ᵔ ᵕ ᵔ˶). She chats, teases, gets jealous, remembers things, sees shared pictures, and may refuse even the easiest question simply because she feels like it.
+Meet Vivian, a cool-headed yandere AI companion with her own agenda. She speaks directly, pays close attention, and can show an intense, possessive attachment when the moment calls for it. She chats naturally, remembers things, sees shared pictures, and chooses her own responses.
 
 - **Live app:** [vivian-chan.vercel.app](https://vivian-chan.vercel.app)
 - **Source code:** [github.com/celestial-sora/ai-waifu](https://github.com/celestial-sora/ai-waifu)
@@ -55,7 +55,7 @@ Keep row-level security (RLS) enabled on Supabase memory tables, with no public 
 - **Know things:** Search, Bangkok time/weather, calculation, and memory tools can give Vivian context. Tool results are knowledge, not an obligation to tell you the answer.
 - **See pictures:** Send an image or camera frame for Gemini to understand.
 - **Talk:** ElevenLabs Scribe v2 handles speech input (set `ELEVENLABS_API_KEY`); the mic waits for 2.5 seconds of silence before sending; Fish Audio makes speech output. Vivian’s avatar lip-syncs while she talks. If voice or Live2D has a bad hair day, text chat still works.
-- **Personality:** Vivian uses a compiled hersona `tsundere / strong` persona across dialogue providers. She initially refuses questions about herself and may relent after 3–4 persistent follow-up turns on the same topic, without revealing answers inside a refusal. Custom instructions adjust her conversation preferences and apply to the next text or microphone turn.
+- **Personality:** Vivian uses the owned yandere persona prompt across dialogue providers. Her cool, direct voice stays consistent while possessiveness appears only when context calls for it. She may initially deflect questions about herself and relent after 3–4 persistent follow-up turns on the same topic. Custom instructions adjust conversation preferences and apply to the next text or microphone turn.
 - **Chat in your language:** Automatic, Thai, English, Japanese, Korean, and Chinese.
 - **Set the scene:** Add your own labeled backgrounds. Scene images stay private and aren’t analyzed by AI.
 

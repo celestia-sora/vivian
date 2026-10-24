@@ -9,8 +9,8 @@ test("spoken replies omit stage directions and sources but retain dialogue and e
   assert.equal(speechText("(หลบตา)"), "");
 });
 
-test("tsundere denials sound flustered and comfort wins over teasing", () => {
-  assert.equal(speechStyle("ไม่ได้เป็นห่วงสักหน่อย").delivery, "flustered");
+test("yandere delivery stays controlled and vulnerable moments take priority", () => {
+  assert.equal(speechStyle("หวงเธอ อย่ามายุ่งกับฉัน").delivery, "reserved");
   assert.equal(speechStyle("ไม่เป็นไร ฉันฟังอยู่ ไม่ได้เป็นห่วงสักหน่อย").delivery, "gentle");
   assert.equal(speechStyle("เล่ามาสิ ฉันฟังอยู่~").delivery, "gentle");
   assert.match(speechStyle("ไม่เป็นไร ฉันฟังอยู่").cue, /quietly concerned, familiar, restrained/);
@@ -19,7 +19,7 @@ test("tsundere denials sound flustered and comfort wins over teasing", () => {
   assert.equal(speechStyle("...ไง มีอะไรเหรอ?").delivery, "reserved");
   assert.equal(speechStyle("โธ่ อย่าแซวสิ").delivery, "teasing");
   assert.equal(speechStyle("ชิ ตาบ้า ไปคิดเองสิ").delivery, "teasing");
-  assert.match(speechStyle("ฉันก็ไม่ได้รออยู่หรืออะไรนะ").cue, /flustered, defensive/);
+  assert.match(speechStyle("ฉันหวงเธอ").cue, /quietly intense, possessive but controlled/);
 });
 
 test("romaji stammers keep every attempted syllable without spelling the letter B", () => {
@@ -79,7 +79,7 @@ test("Thai speech receives standard Central Thai delivery without changing spoke
   const text = "อย่าเข้าใจผิด ฉันไม่ได้รอหรอก";
   const styled = fishSpeechText(text, speechStyle(text), "s2.1-pro-free", "th");
   assert.match(styled, /พูดไทยกลาง/);
-  assert.match(styled, /เขิน/);
+  assert.match(styled, /สุขุม/);
   assert.equal(styled.replace(/^\[[^\]]+\] /, ""), text);
   assert.match(fishSpeechText(text, speechStyle(text), "s2-pro"), /พูดไทยกลาง/);
 });

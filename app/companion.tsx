@@ -1221,7 +1221,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
   function moodExpression(mood: Mood, intensity: number) {
-    const map: Record<Mood, string> = { calm: "#", warm: intensity >= 70 ? "M lianhong" : "M miyan", playful: intensity >= 70 ? "M xingxing" : "M xingxing2", shy: "M love", tired: "S chabei", melancholy: "M QAQ", tsundere: intensity >= 70 ? "M lianhong" : "M nu" };
+    const map: Record<Mood, string> = { calm: "#", warm: intensity >= 70 ? "M lianhong" : "M miyan", playful: intensity >= 70 ? "M xingxing" : "M xingxing2", shy: "M love", tired: "S chabei", melancholy: "M QAQ", yandere: intensity >= 70 ? "M lianhong" : "M nu" };
     return map[mood];
   }
   function situationExpression(text: string, mood: Mood, intensity: number, idle: boolean) {
@@ -1293,7 +1293,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       shy: /shy|blush|embarrass|照れ|害羞|脸红|เขิน/i,
       tired: /tired|sleep|眠|困|ง่วง/i,
       melancholy: /sad|cry|tear|悲|哭|เศร้า/i,
-      tsundere: intensity >= 70 ? /shy|blush|embarrass|照れ|害羞|脸红|เขิน/i : /angry|mad|pout|怒|生气|งอน/i,
+      yandere: /angry|mad|jealous|possessive|intense|pout|怒|生气|งอน|หึง|หวง/i,
     };
     const expression = supportedExpressions.find((name) => name.trim() === authoredExpression.trim())
       ?? supportedExpressions.find((name) => emotionNames[mood].test(name));

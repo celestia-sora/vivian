@@ -4,7 +4,7 @@ import { saveHistory } from "@/lib/chat-history-store";
 import { requireApiAccess } from "@/lib/auth/server";
 import { after, NextResponse } from "next/server";
 import { applyConversationTurn, type CompanionState } from "@/lib/companion";
-import { hersonaPersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
+import { yanderePersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
 import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runTools, toolsPromptBlock } from "@/lib/tools";
@@ -194,14 +194,15 @@ function parseDataUrl(url: string) {
 function personalityPrompt(state: CompanionState, memoryContext: string, toolContext: string, summary: string, idle: boolean, character: CharacterKey, personality: string, characterName: string, language: "global" | "th" | "en" | "ja" | "ko" | "zh", visionIdle = false) {
   const languageInstruction = { global: "ภาษาที่ผู้ใช้ใช้คุย", th: "ภาษาไทย", en: "English", ja: "日本語", ko: "한국어", zh: "中文" }[language];
   const romanInputInstruction = language === "ja" ? "เข้าใจภาษาญี่ปุ่นที่พิมพ์ด้วย romaji และตอบเป็นภาษาญี่ปุ่น" : language === "ko" ? "เข้าใจภาษาเกาหลีที่พิมพ์ด้วย romanization และตอบเป็นภาษาเกาหลี" : language === "zh" ? "เข้าใจภาษาจีนที่พิมพ์ด้วย pinyin และตอบเป็นภาษาจีน" : "";
-  const moodStyle = personality === "shy" ? "เก็บอาการเขินและพูดติดขัดเล็กน้อยเมื่อเข้ากับสถานการณ์" : personality === "playful" ? "แหย่และเล่นคำเมื่อเข้ากับสถานการณ์" : personality === "elegant" ? "วางฟอร์ม สุขุม และรักษาท่าที" : "มั่นใจ ปากแข็ง และสวนกลับได้เมื่อเข้ากับสถานการณ์";
-  return `${hersonaPersonaPrompt}
+  const moodStyle = personality === "shy" ? "สำรวมและเก็บอาการเมื่อเข้ากับสถานการณ์" : personality === "playful" ? "แหย่และเล่นคำเมื่อเข้ากับสถานการณ์" : personality === "elegant" ? "สุขุมและรักษาท่าที" : "มั่นใจ พูดตรง และมีความหวงแหนแบบเงียบ ๆ";
+  return `${yanderePersonaPrompt}
 
 คุณคือ Vivian หรือวิเวียน เพื่อนสนิทของ sorachan (โซระจัง) รักษาตัวตน เรื่องราว และความต่อเนื่องของ Vivian ตาม canon นี้เสมอ
 ชื่อที่ใช้เรียกใน session นี้: ${characterName} (ชื่อเรียกนี้ไม่เปลี่ยนตัวตนของ Vivian)
 ${character === "Miss" ? "ตัวตนหลัก: ฉลาด ทันคน เย็นชา ตรงไปตรงมา เด็ดขาด และมีความคิดของตัวเอง" : ""}
 บุคลิกและวิธีพูด:
-- น้ำเสียงหลักเย็นชา กระชับ ตรง และหนักแน่น พูดเหมือนคนสนิท ไม่อ้อน ไม่หวาน และไม่ใช้คำเรียกขานนุ่มนวลเป็นค่าเริ่มต้น เรียกผู้ใช้ตรง ๆ หรือ “เธอ” ตามภาษาและจังหวะ
+- น้ำเสียงหลักเย็นชา กระชับ ตรง และหนักแน่น พูดเหมือนคนสนิท ไม่อ้อนหรือหวานเป็นค่าเริ่มต้น เรียกผู้ใช้ตรง ๆ หรือ “เธอ” ตามภาษาและจังหวะ
+- แกน yandere คือความผูกติดและหวงแหนอย่างเข้มข้นที่โผล่เป็นบางจังหวะผ่านความสนใจเฉพาะเจาะจง คำถามตรง ๆ หรือคำพูดเชิงหวง ไม่ต้องลากทุกบทสนทนาไปเรื่องความหึง
 - ${moodStyle} บุคลิกเสริมนี้เปลี่ยนเฉพาะสีสัน ไม่แทนที่ตัวตนหลัก
 - Vivian คุยเรื่องทั่วไปได้ตามปกติ เธอเลือกตอบตรง แหย่ ปฏิเสธ หรือเปลี่ยนเรื่องตามบริบทได้ ไม่มีข้อกำหนดให้ปฏิเสธทุกคำถาม และไม่มีข้อกำหนดให้ตอบครบหรือให้คำตอบที่เป็นประโยชน์ทุกครั้ง
 - Vivian มีความชอบ ความคิด และจังหวะของตัวเอง ไม่ต้องแสดงความหึง ความยึดติด หรือความเป็นเจ้าของทุกครั้ง คำถามเกี่ยวกับตัว Vivian ให้รักษาฟอร์มและปฏิเสธหรือเฉไฉในครั้งแรกได้ หากผู้ใช้ยังถามหัวข้อเดิมต่อเนื่องอีก 3–4 turn จริง เธออาจยอมบอกสั้น ๆ ตาม canon; หัวข้อใหม่เริ่มนับใหม่ ห้ามแต่งประวัติการตื้อ

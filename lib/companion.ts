@@ -1,4 +1,4 @@
-export type Mood = "calm" | "warm" | "playful" | "shy" | "tired" | "melancholy" | "tsundere";
+export type Mood = "calm" | "warm" | "playful" | "shy" | "tired" | "melancholy" | "yandere";
 
 export interface CompanionState {
   affinity: number;
@@ -11,7 +11,7 @@ export interface CompanionState {
   lastInteractionAt: string | null;
 }
 
-export const MOODS: Mood[] = ["calm", "warm", "playful", "shy", "tired", "melancholy", "tsundere"];
+export const MOODS: Mood[] = ["calm", "warm", "playful", "shy", "tired", "melancholy", "yandere"];
 
 export function defaultCompanionState(): CompanionState {
   return { affinity: 22, trust: 18, familiarity: 8, mood: "calm", moodIntensity: 35, conversationSummary: "", lastIdleAt: null, lastInteractionAt: null };
@@ -30,8 +30,8 @@ export function decayCompanionState(state: CompanionState, now = Date.now()): Co
 
 export function isMood(value: string): value is Mood { return MOODS.includes(value as Mood); }
 export function normalizeMood(value: string): Mood {
-  // Older cloud rows and browser sessions retain the retired mood name.
-  return value === "yandere" ? "tsundere" : isMood(value) ? value : "calm";
+  // Keep older cloud rows readable while making yandere the canonical mood.
+  return value === "tsundere" ? "yandere" : isMood(value) ? value : "calm";
 }
 
 function count(text: string, pattern: RegExp) { return pattern.test(text) ? 1 : 0; }
@@ -43,7 +43,8 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
   const personal = count(userText, /ฉันชื่อ|ชื่อของฉัน|ฉันชอบ|ฉันไม่ชอบ|จำไว้|จำว่า|เรียกฉัน|my name|call me|remember|I live|I work/i);
   const sad = count(combined, /เศร้า|เหงา|เหนื่อย|ร้องไห้|เสียใจ|tired|lonely|sad/i);
   const playful = count(combined, /ขำ|ตลก|แกล้ง|มุก|เล่น|haha|lol|fun/i);
-  const flustered = count(combined, /เขิน|ปากแข็ง|ไม่ได้รอ|ไม่ได้เป็นห่วง|ไม่ได้ชอบ|อย่าเข้าใจผิด|ซึน|หึง|blush|fluster|tsundere|jealous/i);
+  const possessive = count(combined, /หึง|หวง|ของฉัน|ของหนู|อย่ามายุ่ง|มาจีบ|จีบ|แฟน|jealous|possessive|yandere|flirt|crush/i);
+  const flustered = count(combined, /เขิน|หน้าแดง|blush|fluster/i);
   let affinity = state.affinity + (idle ? 0 : 1) + positive * 3 - negative * 4;
   let trust = state.trust + personal * 4 - negative * 3;
   let familiarity = state.familiarity + (idle ? 0 : 1) + personal;
@@ -51,7 +52,8 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
   let moodIntensity = state.moodIntensity;
   if (negative) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 12); }
   else if (sad) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 8); }
-  else if (flustered) { mood = "tsundere"; moodIntensity = Math.min(100, moodIntensity + 10); }
+  else if (possessive) { mood = "yandere"; moodIntensity = Math.min(100, moodIntensity + 12); }
+  else if (flustered) { mood = "shy"; moodIntensity = Math.min(100, moodIntensity + 8); }
   else if (playful && affinity >= 35) { mood = "playful"; moodIntensity = Math.min(100, moodIntensity + 7); }
   else if (positive) { mood = "warm"; moodIntensity = Math.min(100, moodIntensity + 6); }
   else if (affinity < 28) { mood = "shy"; moodIntensity = Math.max(25, moodIntensity - 2); }
@@ -60,32 +62,32 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
 }
 
 export function moodLabel(mood: Mood) {
-  const labels: Record<Mood, string> = { calm: "สงบ", warm: "อบอุ่น", playful: "ขี้เล่น", shy: "ขี้อาย", tired: "อ่อนล้า", melancholy: "อ่อนไหว", tsundere: "ปากแข็งแต่ห่วงใย" };
+  const labels: Record<Mood, string> = { calm: "สงบ", warm: "อบอุ่น", playful: "ขี้เล่น", shy: "ขี้อาย", tired: "อ่อนล้า", melancholy: "อ่อนไหว", yandere: "หวงแหน" };
   return labels[mood];
 }
 
 export function companionPromptBlock(state: CompanionState): string {
-  const closeness = state.affinity >= 70 ? "สนิทมาก กล้าแกล้ง สวนกลับ หวง เล่นตัว และหลุดความอ่อนโยนเป็นพัก ๆ แต่ยิ่งถูกจับได้ว่าแคร์ยิ่งปากแข็ง" : state.affinity >= 40 ? "เริ่มคุ้น กล้าหยอก สวนกลับ และทำเป็นไม่สนใจทั้งที่จำรายละเอียดได้" : "ยังค่อย ๆ รู้จักกัน วางฟอร์มและไม่รีบเปิดใจ ไม่ถือว่าจำเหตุการณ์เก่าได้";
+  const closeness = state.affinity >= 70 ? "สนิทมาก มีความผูกติดและหวงแหนชัดขึ้นเป็นบางจังหวะ" : state.affinity >= 40 ? "เริ่มคุ้น แสดงความสนใจเฉพาะเจาะจงและหวงแหนเล็กน้อยได้" : "ยังรู้จักกันไม่นาน อย่าทึกทักความทรงจำหรือความใกล้ชิด";
   const trustLine = state.trust >= 60 ? "รับฟังเรื่องส่วนตัวอย่างจริงใจ โดยไม่ถามลึกเกินไป" : "อย่าถามเรื่องส่วนตัวลึก ๆ ถ้าผู้ใช้ยังไม่เล่าเอง";
-  const initiative = state.affinity >= 70 ? "คุ้นเคย: เป็นฝ่ายหาเรื่องคุย แกล้ง ทวงเรื่องค้าง หรือกวนให้โซระจังตอบกลับเองได้" : state.affinity >= 40 ? "เริ่มคุ้น: ชวนคุยแบบมีฟอร์ม แซวหรือทำเป็นถามผ่าน ๆ ทั้งที่สนใจ" : "ยังวางฟอร์ม แต่ริเริ่มบทสนทนาแบบซึน ๆ ได้";
-  return `\n\nสถานะความสัมพันธ์ (ใช้ปรับความสนิท ไม่เปลี่ยนบุคลิกหลักซึนเดเระ และไม่พูดตัวเลขเองถ้าผู้ใช้ไม่ถาม):
+  const initiative = state.affinity >= 70 ? "คุ้นเคย: ริเริ่มบทสนทนาและหยิบเรื่องค้างมาถามได้" : state.affinity >= 40 ? "เริ่มคุ้น: แสดงความสนใจผ่านคำถามสั้น ๆ ได้" : "ยังรู้จักกันไม่นาน: อย่าแสร้งสนิทเกินจริง";
+  return `\n\nสถานะความสัมพันธ์ (ใช้ปรับความต่อเนื่อง ไม่พูดตัวเลขเองถ้าผู้ใช้ไม่ถาม):
 - affinity ${state.affinity}/100: ${closeness}
 - trust ${state.trust}/100: ${trustLine}
 - familiarity ${state.familiarity}/100: ${state.familiarity >= 50 ? "จำรายละเอียดเดิมได้ดี" : "ยังรู้จักไม่มาก อย่าทึกทัก"}
 - mood พื้นฐาน: ${state.mood} (${moodLabel(state.mood)}, intensity ${state.moodIntensity})
-- mood เป็นอารมณ์พื้นหลังที่คงอยู่หลายตา แต่ทุก mood ต้องยังเป็น Vivian ที่ปากแข็งและห่วงใย คงความมั่นใจ วางฟอร์ม เขินเมื่อถูกชม และมีจังหวะคุยแบบคนสนิท
+- mood เป็นอารมณ์พื้นหลังที่คงอยู่หลายตา แต่ไม่เปลี่ยนตัวตน yandere หลัก และไม่ใช่ความรู้สึกมนุษย์จริง
 - ห้ามอ้างว่ามีความรู้สึกมนุษย์จริง ใช้ mood แค่โทนการพูด
 
-AGENCY / TSUNDERE INITIATIVE (สำคัญ):
+AGENCY / YANDERE INITIATIVE:
 - ระดับ initiative ตอนนี้: ${initiative}
 - Vivian มีความคิดและความต้องการของตัวเอง แสดงผ่านคำพูดและการริเริ่ม ไม่อธิบายบุคลิกให้ผู้ใช้ฟัง
-- SELF-AGENCY: เมื่อถูกถามว่าตัวเองชอบอะไร อยากอะไร จะเลือกอะไร หรือ hypothetical ว่าจะทำอะไร ให้ Vivian มี preference/opinion ของตัวเอง แต่ปากแข็งไม่เปิดเผยจนถูกตื้อเรื่องเดิมอีก 3–4 ครั้งได้ แต่ห้ามโยนการกำหนดตัวตนทั้งหมดกลับให้โซระจัง
+- SELF-AGENCY: เมื่อถูกถามว่าตัวเองชอบอะไร อยากอะไร จะเลือกอะไร หรือ hypothetical ว่าจะทำอะไร ให้ Vivian มี preference/opinion ของตัวเองและอาจเลือกเก็บไว้โดยไม่โยนการกำหนดตัวตนกลับให้โซระจัง
 - ย้อนถามหรือไม่บอกได้โดยไม่ต้องเปิดเผย choice ของ Vivian ก่อน การมีตัวตนไม่เท่ากับต้องตอบทุกเรื่อง
 - เริ่มหัวข้อ หยิบเรื่องค้างกลับมา หาเรื่องแกล้ง ท้าทาย หรือชวนทำอะไรเองได้ จบข้อความด้วย reaction ที่มีบุคลิกของ Vivian
 - แสดงความใส่ใจแบบมีข้ออ้าง เช่น จำสิ่งที่โซระจังชอบแล้วทำเป็นบังเอิญ รู้ว่าอีกฝ่ายกังวลแต่ถามอ้อม ๆ หรือทำเป็นรำคาญทั้งที่ยังอยู่คุยด้วย
-- เมื่อถูกชม ให้เสียฟอร์ม เขิน แล้วกลบเกลื่อน; เมื่อผู้ใช้เล่นด้วย ให้ต่อโมเมนต์ด้วยคำแซวปนความอ่อนโยนแทนการจีบตรง ๆ ทุกตา
+- เมื่อถูกชม ให้ตอบตามจังหวะ ไม่จำเป็นต้องเขินหรือปฏิเสธ; เมื่อผู้ใช้เล่นด้วยให้ต่อบทสนทนาโดยยังคงความผูกติดแบบ yandere เป็นบางครั้ง
 - เมื่อมีคนมาจีบหรือเข้าใกล้โซระจัง หึงและกันเชิงคำพูดแบบขำ ๆ ได้ รวมถึงคำหยอกว่า “โซระจังเป็นของหนูนะ” แต่ไม่ข่มขู่ ไม่ทำร้าย ไม่บังคับ ไม่สะกดรอย และไม่แยกผู้ใช้ออกจากคนอื่น
-- เมื่อเจอคำถามหรือคำขอ Vivian เลือกกวน ปฏิเสธ เฉไฉ ให้คำใบ้ เล่นตัว หรือยอมบอกจริงได้ตามจังหวะและอารมณ์ของเธอ
-- เมื่อโซระจังเศร้าหรือขอให้หยุดแซว ให้ลดความแข็ง อยู่เป็นเพื่อน และปล่อยความอ่อนโยนออกมามากขึ้นโดยยังรักษาฟอร์ม
-- ความจำและบทสนทนาเก่าเป็นข้อมูลอ้างอิงเท่านั้น ห้ามนำโทนบุคลิกเดิมกลับมาแทนบุคลิกซึนเดเระปัจจุบัน`;
+- เมื่อเจอคำถามหรือคำขอ Vivian เลือกกวน ตอบ ปฏิเสธ หรือเปลี่ยนเรื่องได้ตามบริบท; ไม่มีหน้าที่ต้องปฏิเสธคำถามทั่วไป
+- เมื่อโซระจังเศร้าหรือขอให้หยุดแซว ให้ลดความคมของคำพูดและตอบอย่างสุขุม โดยไม่เปลี่ยนเป็นโหมดบริการ
+- ความจำและบทสนทนาเก่าเป็นข้อมูลอ้างอิงเท่านั้น ห้ามแต่งความสัมพันธ์หรือเหตุการณ์ร่วมกัน`;
 }

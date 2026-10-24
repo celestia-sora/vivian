@@ -31,8 +31,7 @@ const harness = load("../lib/chat-decision.ts", { "@/lib/tools": tools, "@/lib/j
 const companion = load("../lib/companion.ts");
 const story = load("../lib/vivian-story.ts");
 const dialogue = load("../lib/vivian-dialogue.ts");
-const hersonaExport = JSON.parse(readFileSync(new URL("../lib/persona/hersona/tsundere-strong.json", import.meta.url), "utf8"));
-const persona = load("../lib/vivian-persona.ts", { "@/lib/persona/hersona/tsundere-strong.json": {default:hersonaExport} });
+const persona = load("../lib/vivian-persona.ts");
 const keys = ["needs_current_information", "needs_memory", "recalls_memory", "needs_vision", "needs_time", "needs_weather", "needs_calculator", "needs_integrations", "supportive_response", "explanatory_response"];
 function answers(values = {}) {
   return { answers: Object.fromEntries(keys.map((key) => [key, { type: "noul", noul: values[key] ?? (key === "needs_memory" ? 0.5 : 0.01) }])) };
@@ -99,7 +98,7 @@ test("ambiguous decisions use conservative defaults and produce no response guid
 
 test("response guidance is static, confidence-gated, and preserves Vivian's personality", () => {
   const supportive = plan(context("I need reassurance"), { supportive_response: 0.99 });
-  assert.match(supportive.responseHint, /vulnerable turn.*quieter, gentler.*tsundere voice/);
+  assert.match(supportive.responseHint, /vulnerable turn.*quieter.*yandere voice/);
   const explanatory = plan(context("Explain it"), { explanatory_response: 0.95 });
   assert.match(explanatory.responseHint, /Treat the explanation request as another conversational move/);
   const decision = jev.parseJevDecision(answers({ needs_weather: 0.97 }));
@@ -274,7 +273,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, tim
   } };
 }
 
-test("chat integrates a single JEV pass; state starts in parallel; main LLM still receives persona and memories", async () => {
+test("chat integrates a single JEV pass; state starts in parallel; main LLM receives the yandere persona and memories", async () => {
   const fixture = chatFixture({ values: { needs_memory: 0.99 } });
   const response = await fixture.post();
   assert.equal(response.status, 200);
@@ -283,7 +282,8 @@ test("chat integrates a single JEV pass; state starts in parallel; main LLM stil
   assert.equal(fixture.calls[0].kind, "state");
   const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
   assert.match(prompt, /Vivian/); assert.match(prompt, /Likes tea/);
-  assert.ok(prompt.includes(dialogue.vivianDialoguePrompt("Hello Vivian")));
+  assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
+  assert.match(prompt, /intensely attached, quietly possessive/);
   assert.equal(prompt.includes(dialogue.VIVIAN_DIALOGUE_EXAMPLE), false);
   assert.equal(fixture.background.length, 1);
 });
@@ -392,27 +392,13 @@ test("fresh greetings request only 120 output tokens from Groq", async () => {
   assert.equal(fixture.background.length, 0);
 });
 
-test("Vivian keeps all voice references in source but only sends the relevant scene", async () => {
-  for (const [message, scene, quote] of [
-    ["2+2 เท่าไหร่", 0, "ฉันจะไม่บอกเธอหรอก"],
-    ["วันนี้อากาศร้อนจังเลย", 1, "ไปดื่มน้ำสิ"],
-    ["อรุณสวัสดิ์", 2, "ฉันไม่ได้รอเธอสักหน่อย"],
-    ["วันนี้ชุดน่ารักจัง", 3, "ไปชมคนอื่นไป"],
-    ["ปวดหัว", 4, "ไปพักก่อน"],
-    ["เมื่อกี้มีคนมาจีบเรา", 5, "โซระจังของฉัน"],
-    ["อธิบาย recursion ให้หน่อย", 6, "ไปงงเองก่อนสิ"],
-  ]) {
-    const fixture = chatFixture({ values: { needs_current_information: 0.01 } });
-    assert.equal((await fixture.post(message)).status, 200);
-    const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
-    const reference = dialogue.vivianDialoguePrompt(message);
-    assert.ok(prompt.includes(reference));
-    assert.ok(reference.includes(`แบบที่ ${scene}:`));
-    assert.ok(reference.includes(quote));
-    assert.equal((reference.match(/แบบที่ \d:/g) ?? []).length, 1);
-    assert.ok(reference.length < dialogue.VIVIAN_DIALOGUE_EXAMPLE.length * 0.65);
-    assert.ok(reference.includes("เรียนรู้พฤติกรรม ไม่ใช่ท่องประโยค"));
-  }
+test("optional voice examples are not injected into the runtime system prompt", async () => {
+  const fixture = chatFixture({ values: { needs_current_information: 0.01 } });
+  assert.equal((await fixture.post("เมื่อกี้มีคนมาจีบเรา")).status, 200);
+  const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
+  assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
+  assert.equal(prompt.includes(dialogue.VIVIAN_DIALOGUE_EXAMPLE), false);
+  assert.equal(dialogue.vivianDialoguePrompt("เมื่อกี้มีคนมาจีบเรา").includes("focused jealousy"), true);
 });
 
 test("passive greeting bypasses JEV and background persistence; access denial stops all preflight", async () => {
@@ -518,8 +504,8 @@ test("scene context or execution/storage failure cannot prevent normal chat from
 });
 
 
-test("compiled hersona strong and latest custom instructions reach all dialogue providers", async () => {
-  const customInstructions = "เรียกฉันว่าโซระ และปากแข็งไม่บอกชื่อ";
+test("yandere persona and latest custom instructions reach all dialogue providers", async () => {
+  const customInstructions = "เรียกฉันว่าโซระ และพูดให้สั้น";
   for (const [provider, options] of [
     ["groq", {}],
     ["gemini", { env:{GROQ_API_KEY:""} }],
@@ -528,23 +514,22 @@ test("compiled hersona strong and latest custom instructions reach all dialogue 
     assert.equal((await fixture.post("สวัสดี ฉันชื่อโซระจัง เธอคือใคร", {customInstructions, language:"th"})).status,200);
     const body=fixture.calls.find(call=>call.kind===provider).body;
     const prompt=provider==="gemini" ? body.systemInstruction.parts[0].text : body.messages[0].content;
-    assert.ok(prompt.startsWith(persona.hersonaPersonaPrompt));
-    assert.match(prompt,/Intensity: strong/);
-    assert.doesNotMatch(prompt,/Respond in Japanese/);
-    assert.match(prompt,/ตอบด้วย ภาษาไทย เท่านั้น/);
-    assert.match(prompt,/คำถามเกี่ยวกับตัว Vivian ทุกเรื่อง/);
-    assert.match(prompt,/เรื่องเดิมอีก 3–4 ครั้งในคนละ turn/);
+    assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
+    assert.match(prompt,/# Vivian — yandere companion/);
+    assert.match(prompt,/ตอบเป็น ภาษาไทย/);
+    assert.match(prompt,/คำถามเกี่ยวกับตัว Vivian/);
+    assert.match(prompt,/three or four genuine follow-up turns/);
     assert.ok(prompt.endsWith(customInstructions));
   }
 });
 
-test("custom instructions are bounded; empty preferences still get persistent strong persona", async () => {
+test("custom instructions are bounded; empty preferences still get the persistent yandere persona", async () => {
   for(const customInstructions of ["", "x".repeat(2100)]) {
     const fixture=chatFixture(); await fixture.post("วันนี้เหนื่อย",{customInstructions});
     const prompt=fixture.calls.find(call=>call.kind==="groq").body.messages[0].content;
-    assert.match(prompt,/Intensity: strong/);
+    assert.match(prompt,/# Vivian — yandere companion/);
     if(customInstructions) {assert.ok(prompt.endsWith("x".repeat(2000)));assert.equal(prompt.includes("x".repeat(2001)),false);}
-    else assert.doesNotMatch(prompt,/คำแนะนำล่าสุดของโซระ/);
+    else assert.doesNotMatch(prompt,/Conversation preferences for this turn/);
     assert.doesNotMatch(prompt,/ตานี้ถูกถามชื่อ/);
   }
 });
@@ -557,10 +542,9 @@ test("self-question persistence reaches the provider as actual separate turns", 
     const fixture=chatFixture(); await fixture.post("",{messages});
     const turns=fixture.calls.find(call=>call.kind==="groq").body.messages;
     assert.equal(turns.filter(turn=>turn.role==="user").length,count+1);
-    assert.match(turns[0].content,/การถามซ้ำ 1–2 ครั้งยังต้องปากแข็ง/);
-    assert.match(turns[0].content,/การเปลี่ยนไปถามคนละเรื่องเกี่ยวกับเธอเริ่มใหม่/);
-    assert.match(turns[0].content,/ในข้อความเดียวไม่นับแทน turn จริง/);
-    assert.match(turns[0].content,/มนุษย์หรือ AI.*ตอบตามจริง/);
+    assert.match(turns[0].content,/Questions about Vivian's own identity/);
+    assert.match(turns[0].content,/Count only actual turns/);
+    assert.match(turns[0].content,/new topic starts over/);
     if(count<followups.length)messages.push({role:"assistant",content:"ไม่บอกหรอก"},{role:"user",content:followups[count]});
   }
 });

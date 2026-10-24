@@ -128,21 +128,23 @@ export function speechText(value: string, language = "global"): string {
 }
 
 export function speechStyle(value: string): SpeechStyle {
-  // Care takes precedence over the proud facade, including comforting replies
-  // that end with a tsundere denial. One cue avoids exaggerated acting.
+  // Vulnerable moments take precedence over intense character styling.
   if (/เศร้า|เสียใจ|ร้องไห้|เหนื่อย|ไม่เป็นไร|ฉันฟังอยู่|อยู่ตรงนี้|พักก่อน|sad|sorry|it's okay|i(?:'m| am) here|take your time|大丈夫|괜찮|没关系/iu.test(value)) {
     return { delivery: "gentle", cue: hasStammer(value) ? "[quietly concerned, familiar, restrained, trying not to sound overly worried, stammering naturally, pronounce broken syllables rather than letter names]" : "[quietly concerned, familiar, restrained, trying not to sound overly worried]", speedAdjustment: -.02, temperature: .60, topP: .70, repetitionPenalty: hasStammer(value) ? 1 : 1.2 };
   }
   if (hasStammer(value)) {
     return { delivery: "flustered", cue: "[flustered, defensive, familiar, stammering naturally, pronounce broken syllables rather than letter names]", speedAdjustment: -.01, temperature: .64, topP: .72, repetitionPenalty: 1 };
   }
-  if (/เขิน|อย่าเข้าใจผิด|ไม่ได้(?:รอ|ชอบ|เป็นห่วง|คิดถึง)|อย่าเพิ่งได้ใจ|อย่าคิดไปเอง|ซะหน่อย|fluster|blush|don't (?:get|misunderstand)|not (?:waiting|like i)|別に|勘違い|照れ|착각|부끄|才不是|别误会/iu.test(value)) {
-    return { delivery: "flustered", cue: "[flustered, defensive, trying hard to hide affection, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
+  if (/หึง|หวง|ของฉัน|ของหนู|อย่ามายุ่ง|jealous|possessive|you're mine|내 거|我的人/iu.test(value)) {
+    return { delivery: "reserved", cue: "[quietly intense, possessive but controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .62, topP: .72, repetitionPenalty: 1.2 };
+  }
+  if (/เขิน|หน้าแดง|fluster|blush|照れ|害羞|脸红|부끄|害羞/iu.test(value)) {
+    return { delivery: "flustered", cue: "[briefly flustered, controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
   if (/หยอก|แกล้ง|ล้อเล่น|เล่นมุก|โธ่|อย่าแซว|ตาบ้า|ไปคิดเอง|เรื่องอะไรจะบอก|ถามมากจริง|ฝันไปเถอะ|teas(?:e|ing)|just kidding/iu.test(value)) {
-    return { delivery: "teasing", cue: "[playfully defiant, familiar, smug little tease with hidden warmth]", speedAdjustment: 0, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
+    return { delivery: "teasing", cue: "[dryly teasing, familiar, controlled possessive undertone]", speedAdjustment: 0, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
-  return { delivery: "reserved", cue: "[familiar, composed, mildly defiant, naturally tsundere, casually conversational]", speedAdjustment: 0, temperature: .64, topP: .72, repetitionPenalty: 1.2 };
+  return { delivery: "reserved", cue: "[familiar, composed, quietly intense, possessive undertone, casually conversational]", speedAdjustment: 0, temperature: .64, topP: .72, repetitionPenalty: 1.2 };
 }
 
 export function fishSpeechText(cleanText: string, style: SpeechStyle, model: string, language = "global"): string {
