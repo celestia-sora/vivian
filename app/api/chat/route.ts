@@ -100,6 +100,29 @@ async function callGroq(
   return options.firstToken ? readProviderStream(response, "openai", options.firstToken) : response;
 }
 
+/**
+ * A 413 should not immediately fail the whole chat. Retry once with bounded
+ * context while preserving the start/end of Vivian's system prompt and the
+ * newest user turn. Never retry the same oversized payload unchanged.
+ */
+function compactGroqMessages(messages: ProviderMessage[]): ProviderMessage[] {
+  const system = messages.find((message) => message.role === "system");
+  const dialogue = messages.filter((message) => message.role !== "system").slice(-4);
+  const compactSystem = system
+    ? {
+        role: "system" as const,
+        content: system.content.length <= 7000
+          ? system.content
+          : `${system.content.slice(0, 4800)}\\n\\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\\n\\n${system.content.slice(-1900)}`,
+      }
+    : null;
+  const compactDialogue = dialogue.map((message) => ({
+    ...message,
+    content: message.content.length <= 900 ? message.content : message.content.slice(-900),
+  }));
+  return [...(compactSystem ? [compactSystem] : []), ...compactDialogue];
+}
+
 async function callGemini(apiKey: string, payload: Record<string, unknown>, model = geminiPrimaryModel(), options: { version?: string; timeoutMs?: number; firstToken?: () => void } = {}) {
   const cleanKey = apiKey.trim();
   const version = options.version ?? "v1beta";
@@ -468,7 +491,23 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
       try {
         const msgs = [{ role: "system" as const, content: systemPrompt }, ...promptContents];
         providerStarted = Date.now();
-        const initialRes = await callGroq(groqApiKey, msgs, gModel, { maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        let initialRes = await callGroq(groqApiKey, msgs, gModel, { maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        if (initialRes.status === 413) {
+          // Log only the provider's short error metadata, never user prompts or API keys.
+          const errorBody = await initialRes.clone().json().catch(() => null) as { error?: { message?: string; type?: string; code?: string } } | null;
+          console.warn(`Groq (${gModel}) returned 413; retrying once with compact context`, {
+            errorType: errorBody?.error?.type?.slice(0, 80),
+            errorCode: String(errorBody?.error?.code ?? "").slice(0, 80),
+            errorMessage: errorBody?.error?.message?.slice(0, 240),
+            originalMessages: msgs.length,
+            originalChars: msgs.reduce((total, message) => total + message.content.length, 0),
+          });
+          const compactMessages = compactGroqMessages(msgs);
+          initialRes = await callGroq(groqApiKey, compactMessages, gModel, {
+            maxTokens: Math.min(responseTokenLimit, 1000),
+            firstToken: observeToken("groq"),
+          });
+        }
         if (initialRes.ok) {
           const initialData = await initialRes.json();
           generatedData = initialData;
