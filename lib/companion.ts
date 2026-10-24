@@ -1,4 +1,4 @@
-export type Mood = "calm" | "warm" | "playful" | "shy" | "tired" | "melancholy" | "yandere";
+export type Mood = "calm" | "warm" | "playful" | "tired" | "melancholy" | "yandere";
 
 export interface CompanionState {
   affinity: number;
@@ -11,7 +11,7 @@ export interface CompanionState {
   lastInteractionAt: string | null;
 }
 
-export const MOODS: Mood[] = ["calm", "warm", "playful", "shy", "tired", "melancholy", "yandere"];
+export const MOODS: Mood[] = ["calm", "warm", "playful", "tired", "melancholy", "yandere"];
 
 export function defaultCompanionState(): CompanionState {
   return { affinity: 22, trust: 18, familiarity: 8, mood: "calm", moodIntensity: 35, conversationSummary: "", lastIdleAt: null, lastInteractionAt: null };
@@ -31,7 +31,7 @@ export function decayCompanionState(state: CompanionState, now = Date.now()): Co
 export function isMood(value: string): value is Mood { return MOODS.includes(value as Mood); }
 export function normalizeMood(value: string): Mood {
   // Keep older cloud rows readable while making yandere the canonical mood.
-  return value === "tsundere" ? "yandere" : isMood(value) ? value : "calm";
+  return value === "tsundere" || value === "shy" ? "yandere" : isMood(value) ? value : "calm";
 }
 
 function count(text: string, pattern: RegExp) { return pattern.test(text) ? 1 : 0; }
@@ -44,7 +44,6 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
   const sad = count(combined, /เศร้า|เหงา|เหนื่อย|ร้องไห้|เสียใจ|tired|lonely|sad/i);
   const playful = count(combined, /ขำ|ตลก|แกล้ง|มุก|เล่น|haha|lol|fun/i);
   const possessive = count(combined, /หึง|หวง|ของฉัน|ของหนู|อย่ามายุ่ง|มาจีบ|จีบ|แฟน|jealous|possessive|yandere|flirt|crush/i);
-  const flustered = count(combined, /เขิน|หน้าแดง|blush|fluster/i);
   let affinity = state.affinity + (idle ? 0 : 1) + positive * 3 - negative * 4;
   let trust = state.trust + personal * 4 - negative * 3;
   let familiarity = state.familiarity + (idle ? 0 : 1) + personal;
@@ -53,16 +52,15 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
   if (negative) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 12); }
   else if (sad) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 8); }
   else if (possessive) { mood = "yandere"; moodIntensity = Math.min(100, moodIntensity + 12); }
-  else if (flustered) { mood = "shy"; moodIntensity = Math.min(100, moodIntensity + 8); }
   else if (playful && affinity >= 35) { mood = "playful"; moodIntensity = Math.min(100, moodIntensity + 7); }
   else if (positive) { mood = "warm"; moodIntensity = Math.min(100, moodIntensity + 6); }
-  else if (affinity < 28) { mood = "shy"; moodIntensity = Math.max(25, moodIntensity - 2); }
+  else if (affinity < 28) { mood = "yandere"; moodIntensity = Math.max(25, moodIntensity - 2); }
   else { moodIntensity = Math.max(18, moodIntensity - 2); if (moodIntensity <= 22) mood = affinity >= 55 ? "warm" : "calm"; }
   return { ...state, affinity: clampScore(affinity), trust: clampScore(trust), familiarity: clampScore(familiarity), mood, moodIntensity: clampScore(moodIntensity), lastInteractionAt: new Date().toISOString(), lastIdleAt: idle ? new Date().toISOString() : state.lastIdleAt };
 }
 
 export function moodLabel(mood: Mood) {
-  const labels: Record<Mood, string> = { calm: "สงบ", warm: "อบอุ่น", playful: "ขี้เล่น", shy: "ขี้อาย", tired: "อ่อนล้า", melancholy: "อ่อนไหว", yandere: "หวงแหน" };
+  const labels: Record<Mood, string> = { calm: "สงบ", warm: "อบอุ่น", playful: "ขี้เล่น", tired: "อ่อนล้า", melancholy: "อ่อนไหว", yandere: "หวงแหน" };
   return labels[mood];
 }
 

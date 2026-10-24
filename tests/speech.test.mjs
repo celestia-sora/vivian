@@ -17,15 +17,15 @@ test("yandere delivery stays controlled and vulnerable moments take priority", (
   assert.doesNotMatch(speechStyle("ไม่เป็นไร ฉันฟังอยู่").cue, /reassuring/);
   assert.equal(speechStyle("ทำได้ดีนี่!").delivery, "reserved");
   assert.equal(speechStyle("...ไง มีอะไรเหรอ?").delivery, "reserved");
-  assert.equal(speechStyle("โธ่ อย่าแซวสิ").delivery, "teasing");
-  assert.equal(speechStyle("ชิ ตาบ้า ไปคิดเองสิ").delivery, "teasing");
+  assert.equal(speechStyle("โธ่ อย่าแซวสิ").delivery, "reserved");
+  assert.equal(speechStyle("ฉันหวงเธอ").delivery, "reserved");
   assert.match(speechStyle("ฉันหวงเธอ").cue, /quietly intense, possessive but controlled/);
 });
 
 test("romaji stammers keep every attempted syllable without spelling the letter B", () => {
   const text = speechText("B- B- Baka!");
   assert.equal(text, "Ba… Ba… Baka!");
-  assert.match(speechStyle(text).cue, /flustered, defensive, familiar/);
+  assert.match(speechStyle(text).cue, /controlled, quietly intense, familiar/);
   assert.match(speechStyle(text).cue, /stammering naturally/);
   assert.equal(speechStyle(text).repetitionPenalty, 1);
   assert.equal(speechStyle("เล่ามาสิ").repetitionPenalty, 1.2);

@@ -23,9 +23,9 @@ test("a jealous reply expresses yandere mood even in a new relationship", () => 
   assert.equal(next.affinity, state.affinity + 1);
 });
 
-test("a flustered reply remains a passing shy mood", () => {
+test("embarrassment does not replace Vivian's yandere mood", () => {
   const next = applyConversationTurn(defaultCompanionState(), "ชมได้ไหม", "หน้าแดงทำไม? ไม่ได้เขินสักหน่อย");
-  assert.equal(next.mood, "shy");
+  assert.equal(next.mood, "yandere");
 });
 
 test("distress takes precedence over flustered banter", () => {

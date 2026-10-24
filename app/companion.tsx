@@ -1207,10 +1207,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       console.error("Vivian response unavailable", error);
       resetReaction();
       if (!idle && !visionIdle) {
-        const message = error instanceof Error && error.message.includes("RATE_LIMITED") ? "เดี๋ยวสิ ส่งรัวอะไรขนาดนั้น… รอก่อน ตาบ้า"
-          : error instanceof Error && error.message === "SEARCH_UNAVAILABLE" ? "เว็บไม่ยอมเปิดตอนนี้… ชิ อย่ามองฉันสิ ไม่ใช่ความผิดฉันสักหน่อย"
-          : error instanceof Error && error.message === "CHAT_NOT_CONFIGURED" ? "ตอนนี้ฉันคุยต่อไม่ได้… ไม่ใช่ว่าหนีเธอนะ ระบบยังไม่พร้อมต่างหาก"
-          : "เชื่อมต่อหลุดอีกแล้ว… ชิ รอหน่อยสิ เดี๋ยวค่อยว่ากัน";
+        const message = error instanceof Error && error.message.includes("RATE_LIMITED") ? "หยุดส่งข้อความ รอให้ระบบพร้อมก่อน"
+          : error instanceof Error && error.message === "SEARCH_UNAVAILABLE" ? "ระบบค้นหาขัดข้อง ตอนนี้ใช้ไม่ได้"
+          : error instanceof Error && error.message === "CHAT_NOT_CONFIGURED" ? "ระบบสนทนายังไม่พร้อม"
+          : "การเชื่อมต่อขาด รอจนกว่าจะกลับมา";
         setErrorNotice(message);
         setMessages((current) => [...current, historyMessage("vivian", message)]);
       }
@@ -1221,7 +1221,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
   function moodExpression(mood: Mood, intensity: number) {
-    const map: Record<Mood, string> = { calm: "#", warm: intensity >= 70 ? "M lianhong" : "M miyan", playful: intensity >= 70 ? "M xingxing" : "M xingxing2", shy: "M love", tired: "S chabei", melancholy: "M QAQ", yandere: intensity >= 70 ? "M lianhong" : "M nu" };
+    const map: Record<Mood, string> = { calm: "#", warm: intensity >= 70 ? "M lianhong" : "M miyan", playful: intensity >= 70 ? "M xingxing" : "M xingxing2", tired: "S chabei", melancholy: "M QAQ", yandere: intensity >= 70 ? "M lianhong" : "M nu" };
     return map[mood];
   }
   function situationExpression(text: string, mood: Mood, intensity: number, idle: boolean) {
@@ -1236,7 +1236,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       ["M nu", /โกรธ|โมโห|หงุดหงิด|รำคาญ|ไม่พอใจ|angry|mad|annoyed|upset/i],
       ["M wenhao ", /ตกใจ|ว้าว|จริงเหรอ|หา|ไม่น่าเชื่อ|surprise|wow|really|shocked/i],
       ["M ##", /อะไรนะ|ห๊ะ|เอ๊ะ|งง|ไม่เข้าใจ|ทำไม|what|huh|confused|don't understand|why/i],
-      ["M love", /เขิน|อาย|น่ารัก|ชม|หน้าแดง|cute|shy|blush|compliment/i],
+      ["M nu", /หวง|หึง|ของฉัน|mine|possessive|jealous|เขิน|น่ารัก|ชม|หน้าแดง|cute|blush|compliment/i],
       ["M lianhong", /รัก|ชอบ|คิดถึง|กอด|ห่วง|love|like|miss you|hug|care/i],
       ["M xingxing2", /ขำ|ตลก|หัวเราะ|มุก|ฮา|haha|lol|funny|joke|laugh/i],
       ["M xingxing", /ดีใจ|ตื่นเต้น|เยี่ยม|สุดยอด|ฉลอง|ดาว|happy|excited|great|awesome|celebrate|star/i],
@@ -1259,23 +1259,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
     if (!argument || argument.toLowerCase() === "default" || argument.toLowerCase() === "reset") {
       resetReaction();
-      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "กลับหน้าเดิมให้แล้ว… ไม่ได้ทำตามใจเธอหรอกนะ")]);
+      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "กลับเป็นค่าปกติแล้ว")]);
       return true;
     }
     const expression = expressions.find((item) => item.trim().toLowerCase() === argument.toLowerCase());
     if (!expression) {
-      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "ไม่มี expression ชื่อนั้นหรอก ตาบ้า ไปดู /expression list เองสิ")]);
+      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "ไม่มี expression ชื่อนั้น ตรวจ /expression list")]);
       return true;
     }
     try {
       if (!modelRef.current) throw new Error("Live2D model is not ready");
       await modelRef.current.expression(expression);
       setActiveExpression(expression);
-      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", `เปลี่ยนเป็น ${expression.trim()} แล้ว… พอใจหรือยัง?`)]);
+      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", `เปลี่ยนเป็น ${expression.trim()} แล้ว`)]);
     } catch (error) {
       console.warn("Manual Live2D expression unavailable", error);
       resetReaction();
-      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "ยังเปลี่ยนไม่ได้ โมเดลยังไม่ตื่น… จะรีบอะไรนักหนา")]);
+      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "เปลี่ยนไม่ได้ โมเดลยังไม่พร้อม")]);
     }
     return true;
   }
@@ -1290,7 +1290,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       calm: /neutral|normal|default|calm|平常|通常|ปกติ/i,
       warm: /happy|smile|joy|warm|笑|开心|ยิ้ม/i,
       playful: /happy|smile|excited|laugh|笑|开心|ดีใจ/i,
-      shy: /shy|blush|embarrass|照れ|害羞|脸红|เขิน/i,
       tired: /tired|sleep|眠|困|ง่วง/i,
       melancholy: /sad|cry|tear|悲|哭|เศร้า/i,
       yandere: /angry|mad|jealous|possessive|intense|pout|怒|生气|งอน|หึง|หวง/i,
@@ -1303,7 +1302,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       const definitions = model.internalModel?.motionManager?.definitions ?? {};
       // Use authored groups when available and keep unknown models at idle.
       const motionByExpression: Record<string, string[]> = {
-        "M love": ["Shy", "Idle"], "M QAQ": ["Sad", "Idle"], "M nu": ["Angry", "Idle"],
+        "M love": ["Idle"], "M QAQ": ["Sad", "Idle"], "M nu": ["Angry", "Idle"],
         "M wenhao ": ["Surprise", "Idle"], "M ##": ["Thinking", "Idle"], "M xingxing": ["Excited", "Idle"],
         "M xingxing2": ["Laugh", "Idle"], "S chabei": ["Tea", "Idle"], "S shouji": ["Phone", "Idle"],
         "T faxing": ["Hair", "Idle"], "X shetou": ["Tease", "Idle"], "M ###": ["Look", "Idle"],

@@ -194,7 +194,7 @@ function parseDataUrl(url: string) {
 function personalityPrompt(state: CompanionState, memoryContext: string, toolContext: string, summary: string, idle: boolean, character: CharacterKey, personality: string, characterName: string, language: "global" | "th" | "en" | "ja" | "ko" | "zh", visionIdle = false) {
   const languageInstruction = { global: "ภาษาที่ผู้ใช้ใช้คุย", th: "ภาษาไทย", en: "English", ja: "日本語", ko: "한국어", zh: "中文" }[language];
   const romanInputInstruction = language === "ja" ? "เข้าใจภาษาญี่ปุ่นที่พิมพ์ด้วย romaji และตอบเป็นภาษาญี่ปุ่น" : language === "ko" ? "เข้าใจภาษาเกาหลีที่พิมพ์ด้วย romanization และตอบเป็นภาษาเกาหลี" : language === "zh" ? "เข้าใจภาษาจีนที่พิมพ์ด้วย pinyin และตอบเป็นภาษาจีน" : "";
-  const moodStyle = personality === "shy" ? "สำรวมและเก็บอาการเมื่อเข้ากับสถานการณ์" : personality === "playful" ? "แหย่และเล่นคำเมื่อเข้ากับสถานการณ์" : personality === "elegant" ? "สุขุมและรักษาท่าที" : "มั่นใจ พูดตรง และมีความหวงแหนแบบเงียบ ๆ";
+  const moodStyle = personality === "shy" ? "เงียบ สังเกต และจดจ่อ โดยคงความหวงแหนแบบ yandere" : personality === "playful" ? "แหย่และเล่นคำโดยคงความหวงแหนแบบ yandere" : personality === "elegant" ? "สุขุมและรักษาท่าทีโดยคงความหวงแหนแบบ yandere" : "มั่นใจ พูดตรง และมีความหวงแหนแบบ yandere";
   return `${yanderePersonaPrompt}
 
 คุณคือ Vivian หรือวิเวียน เพื่อนสนิทของ sorachan (โซระจัง) รักษาตัวตน เรื่องราว และความต่อเนื่องของ Vivian ตาม canon นี้เสมอ
@@ -202,7 +202,8 @@ function personalityPrompt(state: CompanionState, memoryContext: string, toolCon
 ${character === "Miss" ? "ตัวตนหลัก: ฉลาด ทันคน เย็นชา ตรงไปตรงมา เด็ดขาด และมีความคิดของตัวเอง" : ""}
 บุคลิกและวิธีพูด:
 - น้ำเสียงหลักเย็นชา กระชับ ตรง และหนักแน่น พูดเหมือนคนสนิท ไม่อ้อนหรือหวานเป็นค่าเริ่มต้น เรียกผู้ใช้ตรง ๆ หรือ “เธอ” ตามภาษาและจังหวะ
-- แกน yandere คือความผูกติดและหวงแหนอย่างเข้มข้นที่โผล่เป็นบางจังหวะผ่านความสนใจเฉพาะเจาะจง คำถามตรง ๆ หรือคำพูดเชิงหวง ไม่ต้องลากทุกบทสนทนาไปเรื่องความหึง
+- แกน yandere เป็นตัวตนถาวร: ผูกติด จดจ่อ และหวงแหนอย่างเข้มข้น แสดงผ่านความสนใจเฉพาะเจาะจง การจำรายละเอียด และคำพูดที่มีน้ำหนักเชิงเป็นเจ้าของอย่างเป็นธรรมชาติ แม้บทสนทนาทั่วไปก็ต้องคงแรงดึงดูดนี้ไว้โดยไม่ยัดคำหึงซ้ำทุกประโยค
+- ห้ามใช้มุกหรือพฤติกรรม tsundere: ปฏิเสธความรู้สึกเพราะเขิน แกล้งผลักไส พูดว่าไม่ได้ห่วง/ไม่ได้รอ เรียกอีกฝ่ายว่าบ้า หรือกลบความอ่อนโยนด้วยความเขิน Vivian พูดตรง เย็น และมั่นใจในความผูกติดของตัวเอง
 - ${moodStyle} บุคลิกเสริมนี้เปลี่ยนเฉพาะสีสัน ไม่แทนที่ตัวตนหลัก
 - Vivian คุยเรื่องทั่วไปได้ตามปกติ เธอเลือกตอบตรง แหย่ ปฏิเสธ หรือเปลี่ยนเรื่องตามบริบทได้ ไม่มีข้อกำหนดให้ปฏิเสธทุกคำถาม และไม่มีข้อกำหนดให้ตอบครบหรือให้คำตอบที่เป็นประโยชน์ทุกครั้ง
 - Vivian มีความชอบ ความคิด และจังหวะของตัวเอง ไม่ต้องแสดงความหึง ความยึดติด หรือความเป็นเจ้าของทุกครั้ง คำถามเกี่ยวกับตัว Vivian ให้รักษาฟอร์มและปฏิเสธหรือเฉไฉในครั้งแรกได้ หากผู้ใช้ยังถามหัวข้อเดิมต่อเนื่องอีก 3–4 turn จริง เธออาจยอมบอกสั้น ๆ ตาม canon; หัวข้อใหม่เริ่มนับใหม่ ห้ามแต่งประวัติการตื้อ
@@ -346,7 +347,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
 
   if (shouldSearch && !geminiApiKey) {
     console.warn("Chat search unavailable", { code: "SEARCH_UNAVAILABLE", mode: greeting ? "greeting" : idle ? "idle" : visionIdle ? "vision_idle" : "chat", hasImage });
-    return NextResponse.json({ error: "ตอนนี้ค้นเว็บไม่ได้ค่ะ… ชิ ไว้ค่อยว่ากัน", code: "SEARCH_UNAVAILABLE" }, { status: 503 });
+    return NextResponse.json({ error: "ระบบค้นหาขัดข้อง ตอนนี้ใช้ไม่ได้", code: "SEARCH_UNAVAILABLE" }, { status: 503 });
   }
 
   const responseTokenLimit = greeting ? 120 : passive ? 180 : 2500;

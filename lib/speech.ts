@@ -1,5 +1,5 @@
 export interface SpeechStyle {
-  delivery: "reserved" | "teasing" | "flustered" | "gentle";
+  delivery: "reserved" | "teasing" | "intense" | "gentle";
   cue: string;
   speedAdjustment: number;
   temperature: number;
@@ -133,15 +133,15 @@ export function speechStyle(value: string): SpeechStyle {
     return { delivery: "gentle", cue: hasStammer(value) ? "[quietly concerned, familiar, restrained, trying not to sound overly worried, stammering naturally, pronounce broken syllables rather than letter names]" : "[quietly concerned, familiar, restrained, trying not to sound overly worried]", speedAdjustment: -.02, temperature: .60, topP: .70, repetitionPenalty: hasStammer(value) ? 1 : 1.2 };
   }
   if (hasStammer(value)) {
-    return { delivery: "flustered", cue: "[flustered, defensive, familiar, stammering naturally, pronounce broken syllables rather than letter names]", speedAdjustment: -.01, temperature: .64, topP: .72, repetitionPenalty: 1 };
+    return { delivery: "intense", cue: "[controlled, quietly intense, familiar, stammering naturally, pronounce broken syllables rather than letter names]", speedAdjustment: -.01, temperature: .64, topP: .72, repetitionPenalty: 1 };
   }
   if (/หึง|หวง|ของฉัน|ของหนู|อย่ามายุ่ง|jealous|possessive|you're mine|내 거|我的人/iu.test(value)) {
     return { delivery: "reserved", cue: "[quietly intense, possessive but controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .62, topP: .72, repetitionPenalty: 1.2 };
   }
   if (/เขิน|หน้าแดง|fluster|blush|照れ|害羞|脸红|부끄|害羞/iu.test(value)) {
-    return { delivery: "flustered", cue: "[briefly flustered, controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
+    return { delivery: "intense", cue: "[quietly intense, controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
-  if (/หยอก|แกล้ง|ล้อเล่น|เล่นมุก|โธ่|อย่าแซว|ตาบ้า|ไปคิดเอง|เรื่องอะไรจะบอก|ถามมากจริง|ฝันไปเถอะ|teas(?:e|ing)|just kidding/iu.test(value)) {
+  if (/หยอก|แกล้ง|ล้อเล่น|เล่นมุก|teas(?:e|ing)|just kidding/iu.test(value)) {
     return { delivery: "teasing", cue: "[dryly teasing, familiar, controlled possessive undertone]", speedAdjustment: 0, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
   return { delivery: "reserved", cue: "[familiar, composed, quietly intense, possessive undertone, casually conversational]", speedAdjustment: 0, temperature: .64, topP: .72, repetitionPenalty: 1.2 };
@@ -157,7 +157,7 @@ export function fishSpeechText(cleanText: string, style: SpeechStyle, model: str
   const cue = thai ? {
     reserved: "[พูดไทยกลาง น้ำเสียงเป็นกันเอง สุขุม แอบเชิดนิด ๆ]",
     teasing: "[พูดไทยกลาง หยอกอย่างเป็นกันเอง]",
-    flustered: "[พูดไทยกลาง เขิน กลบเกลื่อนความรู้สึก]",
+    intense: "[พูดไทยกลาง สุขุม น้ำเสียงนิ่งและหนักแน่น]",
     gentle: "[พูดไทยกลาง ห่วงใยอย่างเก็บอาการ]",
   }[style.delivery] : style.cue;
   return `${cue} ${cleanText}`;

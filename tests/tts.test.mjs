@@ -101,7 +101,7 @@ test("actual Fish payload uses prepared Thai speech and preserves voice and loud
     const body = JSON.parse(options.body);
     assert.equal(body.reference_id, "fixture-voice");
     assert.deepEqual(body.prosody, { speed: .97, volume: 0, normalize_loudness: true });
-    assert.equal(body.text, "[พูดไทยกลาง เขิน กลบเกลื่อนความรู้สึก] ราคา หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ ด… ด… เดี๋ยว!");
+    assert.equal(body.text, "[พูดไทยกลาง สุขุม น้ำเสียงนิ่งและหนักแน่น] ราคา หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ ด… ด… เดี๋ยว!");
     assert.equal(body.normalize, false);
     assert.equal(body.repetition_penalty, 1);
     assert.equal(body.condition_on_previous_chunks, true);

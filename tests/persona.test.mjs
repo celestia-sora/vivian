@@ -27,5 +27,6 @@ test("the runtime persona is yandere, character-first, and not routine-bound", (
 test("mood mapping and voice cues reflect controlled possessiveness", () => {
   assert.match(app, /yandere: intensity >= 70/);
   assert.match(speech, /quietly intense, possessive but controlled/);
-  assert.match(speech, /vulnerable moments take precedence over intense character styling/);
+  assert.match(route, /แกน yandere เป็นตัวตนถาวร/);
+  assert.match(route, /ห้ามใช้มุกหรือพฤติกรรม tsundere/);
 });
