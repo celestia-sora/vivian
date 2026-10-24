@@ -224,7 +224,7 @@ for (const phase of ["headers", "body"]) {
 
 // Exercise the actual chat route, JEV client, parser and plan; mock only auth,
 // persistence and upstream services. Never send test messages to cloud memory.
-function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, cerebrasReply, timeout = 2000, sceneContext = null, sceneFailure = false, sceneExecutionFailure = false } = {}) {
+function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, timeout = 2000, sceneContext = null, sceneFailure = false, sceneExecutionFailure = false } = {}) {
   const calls = [], background = [], memoryLoads = [];
   const providerEnv = { TYPESAFE_API_KEY: "fixture-jev", GROQ_API_KEY: "fixture-groq", GEMINI_API_KEY: "fixture-gemini", SUPABASE_URL: "fixture-db", SUPABASE_SERVICE_ROLE_KEY: "fixture-admin", ...env };
   const fixtureJev = client(async (url, options) => {
@@ -265,7 +265,6 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, cer
     fetch: async (url, options) => {
       const body = JSON.parse(options.body);
       if (url.includes("groq.com")) { calls.push({ kind: "groq", body }); return groqReply ? groqReply(body) : Response.json({ choices: [{ message: { content: "Vivian fixture reply" } }] }); }
-      if (url.includes("cerebras.ai")) { calls.push({ kind: "cerebras", body }); return cerebrasReply ? cerebrasReply(body) : Response.json({ choices: [{ message: { content: "Cerebras fixture reply" } }] }); }
       if (url.includes("generativelanguage.googleapis.com")) { calls.push({ kind: "gemini", body }); return Response.json({ candidates: [{ content: { parts: [{ text: "Gemini fixture reply" }] } }] }); }
       assert.fail(`Unexpected service request: ${url}`);
     },
@@ -313,7 +312,7 @@ test("casual Thai today mentions use text chat without Gemini, while explicit se
   const response = await explicit.post("ค้นหาข่าวล่าสุดให้หน่อย");
   assert.equal(response.status, 503);
   assert.equal((await response.json()).code, "SEARCH_UNAVAILABLE");
-  assert.equal(explicit.calls.some((call) => ["groq", "cerebras", "gemini"].includes(call.kind)), false);
+  assert.equal(explicit.calls.some((call) => ["groq", "gemini"].includes(call.kind)), false);
 });
 
 test("chat skips irrelevant durable memory, executes approved local tools and adds bounded response guidance", async () => {
@@ -366,33 +365,31 @@ for (const [label, options] of [
   });
 }
 
-test("JEV works without Gemini and normal text retains Groq → Cerebras → Gemini fallback", async () => {
+test("JEV works without Gemini and normal text retains Groq → Gemini fallback", async () => {
   const noGemini = chatFixture({ env: { GEMINI_API_KEY: "" }, values: { needs_current_information: 0.99 } });
   assert.equal((await noGemini.post()).status, 200);
   assert.equal(noGemini.calls.filter((call) => call.kind === "jev").length, 1);
   assert.equal(noGemini.calls.find((call) => call.kind === "groq").kind, "groq");
-  const fallback = chatFixture({ env: { CEREBRAS_API_KEY: "fixture-cerebras", JEV_ENABLED: "false" }, groqReply: () => new Response("fail", { status: 503 }), cerebrasReply: () => new Response("fail", { status: 503 }) });
+  const fallback = chatFixture({ env: { JEV_ENABLED: "false" }, groqReply: () => new Response("fail", { status: 503 }) });
   assert.equal((await fallback.post()).status, 200);
-  assert.deepEqual(fallback.calls.filter((call) => ["groq", "cerebras", "gemini"].includes(call.kind)).map((call) => call.kind), ["groq", "cerebras", "gemini"]);
+  assert.deepEqual(fallback.calls.filter((call) => ["groq", "gemini"].includes(call.kind)).map((call) => call.kind), ["groq", "gemini"]);
 });
 
-test("Groq quota or missing model goes directly to Cerebras without probing other Groq models", async () => {
+test("Groq quota or missing model falls back to Gemini without probing other Groq models", async () => {
   for (const status of [429, 404]) {
-    const fixture = chatFixture({ env: { CEREBRAS_API_KEY: "fixture-cerebras" }, groqReply: () => new Response("unavailable", { status }) });
+    const fixture = chatFixture({ groqReply: () => new Response("unavailable", { status }) });
     const response = await fixture.post();
     assert.equal(response.status, 200);
-    assert.deepEqual(fixture.calls.filter((call) => ["groq", "cerebras", "gemini"].includes(call.kind)).map((call) => call.kind), ["groq", "cerebras"]);
+    assert.deepEqual(fixture.calls.filter((call) => ["groq", "gemini"].includes(call.kind)).map((call) => call.kind), ["groq", "gemini"]);
     assert.equal(fixture.calls.find((call) => call.kind === "groq").body.model, "openai/gpt-oss-120b");
   }
 });
 
-test("fresh greetings request only 120 output tokens across text providers", async () => {
-  for (const provider of ["groq", "cerebras"]) {
-    const fixture = chatFixture({ env: { CEREBRAS_API_KEY: "fixture-cerebras" }, groqReply: provider === "cerebras" ? () => new Response("limited", { status: 429 }) : undefined });
-    assert.equal((await fixture.post("Hello", { mode: "greeting" })).status, 200);
-    assert.equal(fixture.calls.find((call) => call.kind === provider).body.max_tokens, 120);
-    assert.equal(fixture.background.length, 0);
-  }
+test("fresh greetings request only 120 output tokens from Groq", async () => {
+  const fixture = chatFixture();
+  assert.equal((await fixture.post("Hello", { mode: "greeting" })).status, 200);
+  assert.equal(fixture.calls.find((call) => call.kind === "groq").body.max_tokens, 120);
+  assert.equal(fixture.background.length, 0);
 });
 
 test("Vivian keeps all voice references in source but only sends the relevant scene", async () => {
@@ -430,7 +427,7 @@ test("passive greeting bypasses JEV and background persistence; access denial st
   assert.equal(locked.calls.length, 0);
 });
 
-for (const provider of ["groq", "cerebras"]) {
+for (const provider of ["groq", "gemini"]) {
   test(`${provider} external app requests cannot advertise or execute function tools`, async () => {
     const reply = (body) => {
       assert.equal(body.tools, undefined);
@@ -440,7 +437,7 @@ for (const provider of ["groq", "cerebras"]) {
         tool_calls: [{ id: "call-1", function: { name: "DISCORD_SEND", arguments: '{"text":"hello"}' } }],
       } }] });
     };
-    const fixture = chatFixture({ values: { needs_integrations: 1 }, env: provider === "cerebras" ? { GROQ_API_KEY: "", CEREBRAS_API_KEY: "fixture-cerebras" } : {}, [provider === "groq" ? "groqReply" : "cerebrasReply"]: reply });
+    const fixture = chatFixture({ values: { needs_integrations: 1 }, env: {}, groqReply: reply });
     const response = await fixture.post("send on discord");
     assert.equal(response.status, 200);
     assert.equal((await response.json()).text, "External apps are unavailable");
@@ -525,8 +522,7 @@ test("compiled hersona strong and latest custom instructions reach all dialogue 
   const customInstructions = "เรียกฉันว่าโซระ และปากแข็งไม่บอกชื่อ";
   for (const [provider, options] of [
     ["groq", {}],
-    ["cerebras", { groqReply: async () => new Response("offline", {status:503}), env:{CEREBRAS_API_KEY:"fixture-cerebras"} }],
-    ["gemini", { env:{GROQ_API_KEY:"", CEREBRAS_API_KEY:""} }],
+    ["gemini", { env:{GROQ_API_KEY:""} }],
   ]) {
     const fixture=chatFixture(options);
     assert.equal((await fixture.post("สวัสดี ฉันชื่อโซระจัง เธอคือใคร", {customInstructions, language:"th"})).status,200);
