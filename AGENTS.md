@@ -96,7 +96,7 @@ import { Container } from "pixi-live2d-display";
 - **Input:** `{ messages: ChatMessage[], userId?: string }`
 - **Behavior:**
   - Try Groq first for normal text chat
-  - Fall back to Cerebras, then Gemini when configured
+  - Fall back to Gemini when configured
   - Detect search intents ("search", "news", "latest", etc.) → use Gemini + google_search tool
 - **Output:** `{ content: string, sources?: { title, url }[] }`
 - **Side Effects:**
@@ -125,9 +125,8 @@ import { Container } from "pixi-live2d-display";
 - `GROQ_API_KEY` — Primary LLM provider
 
 **Optional but Important:**
-- `CEREBRAS_API_KEY` — Text chat fallback
 - `GEMINI_API_KEY` — Fallback LLM + vision and web search capability
-- `OPENROUTER_API_KEY` — Background memory extraction and conversation compression
+- `GROQ_MEMORY_MODEL` — Background memory extraction and conversation compression (default: `openai/gpt-oss-20b`)
 - `ELEVENLABS_API_KEY` — Speech-to-Text
 - `FISH_AUDIO_API_KEY`, `FISH_AUDIO_VOICE_ID` — Text-to-Speech
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — Memory persistence
@@ -344,7 +343,7 @@ This section is the current source of truth for continuing work. Read it before 
 2. Microphone audio is sent to `POST /api/stt`.
 3. The transcript is shown in the STT preview bubble and auto-submitted to `POST /api/chat`.
 4. `/api/chat` loads durable memory from Supabase, then calls Groq as the primary LLM for normal text chat.
-5. If Groq fails or times out, `/api/chat` falls back to Cerebras and then Gemini when configured.
+5. If Groq fails or times out, `/api/chat` falls back to Gemini when configured.
 6. Provider requests have a 25-second timeout; the browser chat request has a 35-second timeout.
 7. The response is sent to `POST /api/tts` using Fish Audio.
 8. The UI waits for audio playback to start, then shows Vivian's response bubble so text and speech are synchronized.
@@ -385,7 +384,7 @@ This section is the current source of truth for continuing work. Read it before 
 - `app/page.tsx` is the server-side gate; `app/companion.tsx` retains the existing client UI. Google OAuth uses `/auth/callback`; Settings provides POST `/auth/signout`. Configure public Supabase URL/publishable key and the Google provider before live login testing.
 - Both authorized accounts retain the existing shared `default` memory/relationship identity. Do not widen access, separate user data, add a home server, Python backend, self-hosted LLM, or GPU infrastructure unless explicitly requested.
 - TTS and Live2D failures must never prevent text chat from completing.
-- Search and vision requests use Gemini; normal text chat uses Groq first, then Cerebras and Gemini as fallbacks.
+- Search and vision requests use Gemini; normal text chat uses Groq first, then Gemini as fallback.
 
 ### Safe continuation workflow
 
