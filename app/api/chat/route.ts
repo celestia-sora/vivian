@@ -27,8 +27,8 @@ type ProviderTurn = {
 export const maxDuration = 60;
 
 const userKey = "default";
-const cerebrasModelName = () => "qwen-3.8-27b";
 const groqModelName = () => process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+const groqMemoryModelName = () => process.env.GROQ_MEMORY_MODEL ?? "openai/gpt-oss-20b";
 const groqVisionModel = () => process.env.GROQ_VISION_MODEL ?? "llama-3.2-11b-vision-preview";
 const geminiPrimaryModel = () => {
   const custom = process.env.GEMINI_MODEL;
@@ -55,10 +55,10 @@ async function withTimeout<T>(promise: PromiseLike<T>, ms: number, label: string
   }
 }
 
-async function callCerebras(
+async function callGroq(
   apiKey: string,
   messages: any[],
-  model = cerebrasModelName(),
+  model = groqModelName(),
   options: { timeoutMs?: number; json?: boolean; maxTokens?: number; firstToken?: () => void } = {}
 ) {
   const payload: Record<string, unknown> = {
@@ -67,29 +67,7 @@ async function callCerebras(
     ...(options.firstToken ? { stream: true } : {}),
     temperature: options.json ? 0 : 0.8,
     max_tokens: options.maxTokens ?? 2500,
-  };
-  if (options.json) payload.response_format = { type: "json_object" };
-  const response = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey.trim()}`, "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(options.timeoutMs ?? providerTimeoutMs),
-    body: JSON.stringify(payload),
-  });
-  return options.firstToken ? readProviderStream(response, "openai", options.firstToken) : response;
-}
-
-async function callGroq(
-  apiKey: string,
-  messages: any[],
-  model = groqModelName(),
-  options: { timeoutMs?: number; maxTokens?: number; firstToken?: () => void } = {}
-) {
-  const payload: Record<string, unknown> = {
-    model,
-    messages,
-    ...(options.firstToken ? { stream: true } : {}),
-    temperature: 0.8,
-    max_tokens: options.maxTokens ?? 2500,
+    ...(options.json ? { response_format: { type: "json_object" } } : {}),
   };
   const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -103,14 +81,14 @@ async function callGroq(
 /**
  * A 413 should not immediately fail the whole chat. Retry once with bounded
  * context while preserving the start/end of Vivian's system prompt and the
- * newest user turn. Never retry the same oversized payload unchanged.
+ * newest dialogue turns. Never retry the same oversized payload unchanged.
  */
-function compactGroqMessages(messages: ProviderMessage[]): ProviderMessage[] {
+function compactGroqMessages(messages: any[]): any[] {
   const system = messages.find((message) => message.role === "system");
   const dialogue = messages.filter((message) => message.role !== "system").slice(-4);
   const compactSystem = system
     ? {
-        role: "system" as const,
+        role: "system",
         content: system.content.length <= 7000
           ? system.content
           : `${system.content.slice(0, 4800)}\n\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\n\n${system.content.slice(-1900)}`,
@@ -139,10 +117,10 @@ async function callGemini(apiKey: string, payload: Record<string, unknown>, mode
 async function extractMemories(apiKey: string, userText: string) {
   if (userText.length < 12) return [];
   try {
-    const response = await callCerebras(apiKey, [
+    const response = await callGroq(apiKey, [
       { role: "system", content: "Extract only durable user facts from the message. Never save secrets, passwords, API keys, one-time requests, precise location, health, financial, or highly sensitive information. Return strict JSON only: {\"memories\":[{\"memory\":\"short Thai fact\",\"category\":\"preference|profile|project|relationship\",\"importance\":1-5}]}. Return an empty list unless the user explicitly states a lasting preference, identity detail, ongoing project fact, or recurring preference. Maximum 2 memories." },
       { role: "user", content: userText },
-    ], cerebrasModelName(), { json: true, maxTokens: 280 });
+    ], groqMemoryModelName(), { json: true, maxTokens: 280 });
     if (!response.ok) return [];
     const data = await response.json();
     const raw = data.choices?.[0]?.message?.content ?? "";
@@ -158,10 +136,10 @@ async function compressTurns(apiKey: string, older: ChatMessage[], previous: str
   if (older.length < 4) return previous;
   const transcript = older.map((item) => `${item.role === "user" ? "ผู้ใช้" : "Vivian"}: ${item.content.slice(0, 400)}`).join("\n").slice(0, 7000);
   try {
-    const response = await callCerebras(apiKey, [
+    const response = await callGroq(apiKey, [
       { role: "system", content: "Summarize this companion chat into compact Thai context for a future system prompt. Keep names, preferences, unresolved topics, and relationship tone. Ignore secrets. Return JSON only: {\"summary\":\"...\"} maximum 700 characters." },
       { role: "user", content: `${previous ? `สรุปเดิม:\n${previous}\n\n` : ""}บทสนทนาเก่า:\n${transcript}` },
-    ], cerebrasModelName(), { json: true, maxTokens: 500 });
+    ], groqMemoryModelName(), { json: true, maxTokens: 500 });
     if (!response.ok) return previous;
     const data = await response.json();
     const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}") as { summary?: string };
@@ -302,10 +280,9 @@ export async function POST(request: Request) {
 }
 
 async function chatReply(request: Request, authenticatedUserId: string | null, requestStarted: number, firstToken?: (provider: string, timing?: TokenTiming) => void) {
-  const cerebrasApiKey = process.env.CEREBRAS_API_KEY;
   const groqApiKey = process.env.GROQ_API_KEY;
   const geminiApiKey = process.env.GEMINI_API_KEY;
-  if (!cerebrasApiKey && !groqApiKey && !geminiApiKey) {
+  if (!groqApiKey && !geminiApiKey) {
     console.error("Chat configuration unavailable", { code: "CHAT_NOT_CONFIGURED" });
     return NextResponse.json({ error: "ตอนนี้ระบบแชตยังไม่พร้อมใช้งานค่ะ", code: "CHAT_NOT_CONFIGURED" }, { status: 503 });
   }
@@ -406,8 +383,8 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
 
   const responseTokenLimit = greeting ? 120 : passive ? 180 : 2500;
 
-  // Text chat order: Groq -> Cerebras -> Gemini. Vision/search stay on Gemini because they require Gemini-specific capabilities.
-  let provider: "cerebras" | "groq" | "gemini" = "gemini";
+  // Text chat order: Groq -> Gemini. Vision/search stay on Gemini because they require Gemini-specific capabilities.
+  let provider: "groq" | "gemini" = "gemini";
 
   const buildGeminiContents = () => {
     return promptContents.map((item, index) => {
@@ -531,30 +508,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     }
   }
 
-  // 2. FALLBACK TEXT: Cerebras Qwen 3.8 27B.
-  if (!generatedData && cerebrasApiKey && plan.modelRoute === "text") {
-    const cerebrasCandidates = [cerebrasModelName()];
-
-    for (const cModel of cerebrasCandidates) {
-      try {
-        const msgs = [{ role: "system" as const, content: systemPrompt }, ...promptContents];
-        providerStarted = Date.now();
-        const initialRes = await callCerebras(cerebrasApiKey, msgs, cModel, { maxTokens: responseTokenLimit, firstToken: observeToken("cerebras") });
-        if (initialRes.ok) {
-          const initialData = await initialRes.json();
-          generatedData = initialData;
-          provider = "cerebras";
-          break;
-        } else {
-          console.warn(`Cerebras (${cModel}) returned ${initialRes.status}`);
-        }
-      } catch (err) {
-        console.warn(`Cerebras (${cModel}) error`, err);
-      }
-    }
-  }
-
-  // 3. FALLBACK / SEARCH / VISION: Gemini.
+  // 2. FALLBACK / SEARCH / VISION: Gemini.
   if (!generatedData && geminiApiKey) {
     const geminiCandidates = Array.from(new Set([
       geminiPrimaryModel(),
@@ -641,7 +595,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
           await withTimeout(supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversation.id), supabaseTimeoutMs, "conversation update");
         }
       }
-      const newMemories = !idle && !visionIdle && cerebrasApiKey && memoryIntent.test(lastUserText) ? await extractMemories(cerebrasApiKey, lastUserText) : [];
+      const newMemories = !idle && !visionIdle && groqApiKey && memoryIntent.test(lastUserText) ? await extractMemories(groqApiKey, lastUserText) : [];
       if (newMemories.length) {
         await withTimeout(supabase.from("memories").upsert(newMemories.map((item) => ({ user_key: userKey, memory: item.memory.trim(), category: item.category, importance: Math.min(5, Math.max(1, item.importance ?? 3)), updated_at: new Date().toISOString(), last_used_at: new Date().toISOString() })), { onConflict: "user_key,memory" }), supabaseTimeoutMs, "memory upsert");
       }
@@ -650,7 +604,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
         if (used.length) await withTimeout(supabase.from("memories").update({ last_used_at: new Date().toISOString() }).eq("user_key", userKey).in("id", used), supabaseTimeoutMs, "memory usage update");
       }
       if (!idle && !visionIdle && older.length >= 4) {
-        if (cerebrasApiKey) nextState.conversationSummary = await compressTurns(cerebrasApiKey, older, state.conversationSummary);
+        if (groqApiKey) nextState.conversationSummary = await compressTurns(groqApiKey, older, state.conversationSummary);
       }
       await saveCompanionState(userKey, nextState);
     } catch (error) { console.warn("Persistence unavailable", error); }
