@@ -2,7 +2,8 @@
 
 Meet Vivian, a cool-headed yandere AI companion with her own agenda. She speaks directly, pays close attention, and can show an intense, possessive attachment when the moment calls for it. She chats naturally, remembers things, sees shared pictures, and chooses her own responses.
 
-- **Live app:** [vivian-chan.vercel.app](https://vivian-chan.vercel.app)
+- **Live app:** [vivianlabs.vercel.app](https://vivianlabs.vercel.app)
+- **Alpha test:** Open for two weeks, October 24–November 7, 2026.
 - **Source code:** [github.com/celestial-sora/ai-waifu](https://github.com/celestial-sora/ai-waifu)
 - **Built with:** Next.js, React, TypeScript, Supabase, and PixiJS
 
@@ -39,9 +40,9 @@ Tiny but important: keep secret keys in server-side environment variables. Never
 
 ## Sign-in & privacy 🔒
 
-Sign-in uses Google through Supabase. The app is limited to two verified accounts: `nicetry@gmail.com` and `goodluck@gmail.com`. Configure Google sign-in and the Supabase URL and publishable key before using the app. Set the Supabase Site URL to `https://vivian-chan.vercel.app` and allow the app's `/auth/callback` URL for production and local development.
+Sign-in uses Google through Supabase. Alpha testers need a confirmed account. Configure Google sign-in and the Supabase URL and publishable key before running your own deployment. Set the Supabase Site URL to `https://vivianlabs.vercel.app` and allow the app's `/auth/callback` URL for production and local development.
 
-Both accounts share the same cloud memories and companion relationship state. Chat history syncs through Supabase across devices, with a browser cache for unsynced messages. Imported Live2D models stay in that browser unless you choose to save them to private cloud storage.
+All authorized accounts share the same cloud memories, chat history, and companion relationship state. Chat history syncs through Supabase across devices, with a browser cache for unsynced messages. Imported Live2D models stay in that browser unless you choose to save them to private cloud storage.
 
 **Menu → Settings** includes sign-out and **Reset Vivian**. Reset clears shared cloud memories, conversation history, and relationship state, along with this device's chat history and local settings. It keeps imported models and does not sign you out.
 
@@ -121,7 +122,7 @@ Run feature tests with scripts such as `npm run test:auth`, `npm run test:jev`, 
 - Live2D uses PixiJS 6 and `pixi-live2d-display/cubism4`. Keep PixiJS on version 6.
 - Load Live2D in the browser only; Cubism Core must load before the model.
 - Keep provider credentials and service-role keys on the server.
-- Keep the two-account access allowlist on the server.
+- Require confirmed Supabase accounts for protected app access.
 - Optional services can fail without stopping text chat.
 
 ## License and assets
