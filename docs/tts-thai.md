@@ -2,6 +2,10 @@
 
 Only `/api/tts` prepares speech; the browser retains the original chat reply. STT and chat persona rules are unchanged. The browser posts text, speed and selected language, then plays MP3 at volume 1. Desktop connects its analyser directly to the audio destination; iOS uses native playback. No gain, volume or loudness settings were changed.
 
+## Current provider (2026-10-27)
+
+TTS now uses ElevenLabs Text to Dialogue with `model_id: "eleven_v4"`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID`. The endpoint supports 2,000 spoken characters per request; the route enforces the limit after Thai text preparation. Speed is not sent because Eleven v4 does not support the speed setting. The older Fish Audio audit below records the former implementation only.
+
 ## Audit (2026-10-07)
 
 Baseline main: `1412f36`. Default model remains `s2.1-pro-free`; `FISH_AUDIO_MODEL` can override it. `reference_id` remains `FISH_AUDIO_VOICE_ID`. No production credentials or reference recordings were available in this workspace, so the deployed override and source voice's accent could not be inspected.

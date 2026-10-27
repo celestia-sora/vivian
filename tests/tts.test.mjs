@@ -17,7 +17,7 @@ function handler(fetch, denied = null, payload = { text: "สวัสดีค�
   runInNewContext(source, {
     exports, fetch, Error,
     // Use fixture credentials only; do not read or contact production providers.
-    process: { env: { FISH_AUDIO_API_KEY: "fixture-key", FISH_AUDIO_VOICE_ID: "fixture-voice" } },
+    process: { env: { ELEVENLABS_API_KEY: "fixture-key", ELEVENLABS_VOICE_ID: "fixture-voice" } },
     AbortSignal: { timeout(ms) { assert.equal(ms, 14000); return AbortSignal.timeout(15); } },
     console: { warn: (...args) => logs.push(args), info: (...args) => logs.push(args) },
     require(name) {
@@ -88,24 +88,27 @@ test("complete MP3 is preserved; empty audio and provider rejections stay JSON e
   assert.equal((await rejected.json()).code, "TTS_UPSTREAM");
 });
 
-test("access denial stops synthesis before contacting Fish", async () => {
+test("access denial stops synthesis before contacting ElevenLabs", async () => {
   const denied = Response.json({ code: "AUTH_REQUIRED" }, { status: 401 });
-  assert.equal(await handler(async () => { assert.fail("Fish must not be called"); }, denied).post(), denied);
+  assert.equal(await handler(async () => { assert.fail("ElevenLabs must not be called"); }, denied).post(), denied);
 });
 
-test("actual Fish payload uses prepared Thai speech and preserves voice and loudness", async () => {
+test("v4 character limit is checked after spoken text preparation", async () => {
+  const tooLong = await handler(async () => { assert.fail("Over-limit text must be rejected before the upstream request"); }, null, { text: "ก".repeat(2001), language: "th" }).post();
+  assert.equal(tooLong.status, 400);
+  assert.match((await tooLong.json()).error, /2000 characters/);
+});
+
+test("actual ElevenLabs payload uses v4 with the configured voice and Thai language", async () => {
   const text = "(กอดอก) ราคา 1,250 บาท ลด 15% ด- ด- เดี๋ยว!";
   const fixture = handler(async (url, options) => {
-    assert.equal(url, "https://api.fish.audio/v1/tts");
-    assert.equal(options.headers.model, "s2.1-pro-free");
+    assert.equal(url, "https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128");
+    assert.equal(options.headers["xi-api-key"], "fixture-key");
     const body = JSON.parse(options.body);
-    assert.equal(body.reference_id, "fixture-voice");
-    assert.deepEqual(body.prosody, { speed: .97, volume: 0, normalize_loudness: true });
-    assert.equal(body.text, "[พูดไทยกลาง สุขุม น้ำเสียงนิ่งและหนักแน่น] ราคา หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ ด… ด… เดี๋ยว!");
-    assert.equal(body.normalize, false);
-    assert.equal(body.repetition_penalty, 1);
-    assert.equal(body.condition_on_previous_chunks, true);
-    assert.equal("language" in body, false);
+    assert.equal(body.model_id, "eleven_v4");
+    assert.deepEqual(body.inputs, [{ text: "ราคา หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ ด… ด… เดี๋ยว!", voice_id: "fixture-voice" }]);
+    assert.equal(body.language_code, "th");
+    assert.equal(body.apply_text_normalization, "auto");
     return new Response(new Uint8Array([73, 68, 51]));
   }, null, { text, language: "th" });
   assert.equal((await fixture.post()).status, 200);

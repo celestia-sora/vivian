@@ -31,7 +31,7 @@ Add service keys to `.env.local` to wake up the features you want. See [.env.exa
 | Sign-in | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` |
 | Cloud memory | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
 | Voice input | `GROQ_API_KEY` |
-| Voice output | `FISH_AUDIO_API_KEY`, `FISH_AUDIO_VOICE_ID` |
+| Voice output | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID` |
 | Search | `GEMINI_API_KEY`; optional `TAVILY_API_KEY` |
 | JEV decisions | `TYPESAFE_API_KEY` or `JEV_API_KEY` |
 | Cloud models and backgrounds | Optional Cloudflare R2 setup; see [R2 guide](docs/private-r2-storage.md) |
@@ -55,7 +55,7 @@ Keep row-level security (RLS) enabled on Supabase memory tables, with no public 
 - **Remember:** Keeps durable relationship-relevant details and mood state. Secrets and sensitive one-off details aren’t saved automatically.
 - **Know things:** Search, Bangkok time/weather, calculation, and memory tools can give Vivian context. Tool results are knowledge, not an obligation to tell you the answer.
 - **See pictures:** Send an image or camera frame for Gemini to understand.
-- **Talk:** ElevenLabs Scribe v2 handles speech input (set `ELEVENLABS_API_KEY`); the mic waits for 2.5 seconds of silence before sending; Fish Audio makes speech output. Vivian’s avatar lip-syncs while she talks. If voice or Live2D has a bad hair day, text chat still works.
+- **Talk:** ElevenLabs Scribe v2 handles speech input and Eleven v4 generates speech output (set `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`); the mic waits for 2.5 seconds of silence before sending. Vivian’s avatar lip-syncs while she talks. If voice or Live2D has a bad hair day, text chat still works.
 - **Personality:** Vivian uses the owned yandere persona prompt across dialogue providers. Her cool, direct voice stays consistent while possessiveness appears only when context calls for it. She may initially deflect questions about herself and relent after 3–4 persistent follow-up turns on the same topic. Custom instructions adjust conversation preferences and apply to the next text or microphone turn.
 - **Chat in your language:** Automatic, Thai, English, Japanese, Korean, and Chinese.
 - **Set the scene:** Add your own labeled backgrounds. Scene images stay private and aren’t analyzed by AI.

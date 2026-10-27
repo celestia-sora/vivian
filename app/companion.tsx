@@ -1192,7 +1192,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       sceneLibrary.applyChatScene(data.scene, sceneGeneration);
       const reply = data.text;
       setErrorNotice(null);
-      // Do not reveal the reply bubble before Fish Audio has started. This
+      // Do not reveal the reply bubble before TTS playback has started. This
       // keeps the visible text and spoken response arriving together.
       if (!muted) await speak(reply, startTiming("reply_to_audio_start"));
       setMessages((current) => [...current, historyMessage("vivian", reply, replyMessageId)]);
