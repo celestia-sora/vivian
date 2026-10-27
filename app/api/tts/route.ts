@@ -1,7 +1,7 @@
 import { requireApiAccess } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
-import { speechText } from "@/lib/speech";
+import { speechEmotionTag, speechText } from "@/lib/speech";
 
 export const maxDuration = 30;
 
@@ -27,6 +27,7 @@ export async function POST(request: Request): Promise<Response> {
   const { text, language } = body as Record<string, unknown>;
   if (typeof text !== "string" || text.length > 5000) return NextResponse.json({ error: "Text is required and must be under 5000 characters", status: 400 }, { status: 400 });
   const speechLanguage = language === "global" || language === "en" || language === "ja" || language === "ko" || language === "zh" || language === "th" ? language : "global";
+  const emotionTag = speechEmotionTag(text);
   const cleanText = speechText(text, speechLanguage);
   if (!cleanText) return NextResponse.json({ error: "Text must contain spoken words", status: 400 }, { status: 400 });
   if (cleanText.length > 2000) return NextResponse.json({ error: "Spoken text must be under 2000 characters for ElevenLabs v4", status: 400 }, { status: 400 });
@@ -41,7 +42,7 @@ export async function POST(request: Request): Promise<Response> {
       },
       signal: AbortSignal.timeout(upstreamTimeoutMs),
       body: JSON.stringify({
-        inputs: [{ text: cleanText, voice_id: voiceId }],
+        inputs: [{ text: `${emotionTag ? `${emotionTag} ` : ""}${cleanText}`, voice_id: voiceId }],
         model_id: "eleven_v4",
         language_code: speechLanguage === "th" ? "th" : speechLanguage === "ja" || speechLanguage === "ko" || speechLanguage === "zh" || speechLanguage === "en" ? speechLanguage : undefined,
         apply_text_normalization: "auto",

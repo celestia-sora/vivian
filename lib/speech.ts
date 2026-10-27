@@ -12,6 +12,11 @@ export interface SpeechStyle {
 const stageDirection = /^[\s]*(?:หลบตา|เม้มปาก|กลบยิ้ม|ยิ้ม|หัวเราะ|หน้าแดง|เขิน|ทำหน้า|หันหน้า|กอดอก|ถอนหายใจ|ขยับ|พยักหน้า|ส่ายหน้า|looks? away|blush(?:es|ing)?|smiles?|sighs?|chuckles?|laughs?|pouts?)/iu;
 const repeatedStammer = /(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]{1,12})\s*[-‐‑‒–—…]\s*\1\s*[-‐‑‒–—…]/iu;
 const audibleStammer = /(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]{1,12})…\s*(?:[เแโใไ])?\1[\p{L}\p{M}]/iu;
+const elevenLabsEmotionTag = /^\s*\[(?:excited|playful|amazed|powerful|proud|optimistic|startled|mad|aggressive|bitter|critical|repelled|anxious|stressed|scared|threatened|vulnerable|confused|busy|tired|bored|distant|despair|let down|peaceful|content|curious|thoughtful|trusting)\]\s*/iu;
+
+export function speechEmotionTag(value: string): string {
+  return value.match(elevenLabsEmotionTag)?.[0].trim() ?? "";
+}
 
 function hasStammer(value: string): boolean {
   return repeatedStammer.test(value) || audibleStammer.test(value);
@@ -105,7 +110,8 @@ export function thaiSpeechNumbers(value: string): string {
 }
 
 export function speechText(value: string, language = "global"): string {
-  const cleaned = normalizeStammers(value.split(/\n\s*(?:แหล่งข้อมูล|sources)\s*:/i)[0]
+  const withoutEmotionMetadata = value.replace(elevenLabsEmotionTag, "");
+  const cleaned = normalizeStammers(withoutEmotionMetadata.split(/\n\s*(?:แหล่งข้อมูล|sources)\s*:/i)[0]
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "")
@@ -136,15 +142,15 @@ export function speechStyle(value: string): SpeechStyle {
     return { delivery: "intense", cue: "[controlled, quietly intense, familiar, stammering naturally, pronounce broken syllables rather than letter names]", speedAdjustment: -.01, temperature: .64, topP: .72, repetitionPenalty: 1 };
   }
   if (/หึง|หวง|ของฉัน|ของหนู|อย่ามายุ่ง|jealous|possessive|you're mine|내 거|我的人/iu.test(value)) {
-    return { delivery: "reserved", cue: "[quietly intense, possessive but controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .62, topP: .72, repetitionPenalty: 1.2 };
+    return { delivery: "reserved", cue: "[quietly jealous, guarded, familiar rather than formal]", speedAdjustment: -.01, temperature: .62, topP: .72, repetitionPenalty: 1.2 };
   }
   if (/เขิน|หน้าแดง|fluster|blush|照れ|害羞|脸红|부끄|害羞/iu.test(value)) {
-    return { delivery: "intense", cue: "[quietly intense, controlled, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
+    return { delivery: "intense", cue: "[slightly flustered, hesitant, trying to sound composed, familiar rather than formal]", speedAdjustment: -.01, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
   if (/หยอก|แกล้ง|ล้อเล่น|เล่นมุก|teas(?:e|ing)|just kidding/iu.test(value)) {
-    return { delivery: "teasing", cue: "[dryly teasing, familiar, controlled possessive undertone]", speedAdjustment: 0, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
+    return { delivery: "teasing", cue: "[dryly teasing, politely reserved, a little embarrassed, familiar]", speedAdjustment: 0, temperature: .66, topP: .74, repetitionPenalty: 1.2 };
   }
-  return { delivery: "reserved", cue: "[familiar, composed, quietly intense, possessive undertone, casually conversational]", speedAdjustment: 0, temperature: .64, topP: .72, repetitionPenalty: 1.2 };
+  return { delivery: "reserved", cue: "[familiar, composed, polite, slightly guarded, casually conversational]", speedAdjustment: 0, temperature: .64, topP: .72, repetitionPenalty: 1.2 };
 }
 
 export function fishSpeechText(cleanText: string, style: SpeechStyle, model: string, language = "global"): string {

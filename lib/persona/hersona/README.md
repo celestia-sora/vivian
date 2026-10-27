@@ -1,6 +1,6 @@
 # Archived hersona persona
 
-This directory preserves an older compiled hersona `personality/tsundere` export and its license for provenance. It is not used by Vivian's current runtime prompt; the active yandere prompt is maintained in `lib/vivian-persona.ts`.
+This directory preserves an older compiled hersona `personality/tsundere` export and its license for provenance. It is not used by Vivian's current runtime prompt; the active character-owned tsundere prompt is maintained in `lib/vivian-persona.ts`.
 
 Source: https://github.com/shiro-0x/hersona
 Source revision: `75146c9126e1614750eeead3da165d61a3fc2188` (pyproject version 1.11.1; checkout export reports 0.0.0+dev). MIT license is included.

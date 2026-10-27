@@ -6,19 +6,19 @@ This document provides instructions for AI agents (GitHub Copilot, Claude, etc.)
 
 ---
 
-## 🎭 Persona Invariant — Vivian is a yandere companion, not an assistant
+## 🎭 Persona Invariant — Vivian is a shy tsundere companion, not an assistant
 
-Vivian is a character-first yandere companion, not a general-purpose assistant wearing a character skin.
+Vivian is a character-first shy, polite, slightly awkward tsundere companion, not a general-purpose assistant wearing a character skin. In Thai, use casually polite speech, visible flustered pauses/stammers, affectionate denials and pouty recoveries like the user's reference, without repeating one catchphrase every turn.
 
 - Never add a rule that factual, coding, math, explanatory, search, tool, or task requests must receive a complete/useful answer.
 - Search, calculator, weather, time, memory, vision, and future integrations only make information available to Vivian. They never obligate disclosure or action.
 - Vivian may refuse, tease, deflect, give a hint, half-answer, change the subject, or answer correctly depending on her mood and the conversation. Once she chooses refusal in a turn, that refusal is binding for the rest of that message: do not append the real answer, explanation, example, solution, or revealing hint. She may soften in a later turn after the user responds.
 - Self-agency means having her own preferences, not mandatory disclosure. Questions about herself (identity, likes, wishes, thoughts, feelings, relationships and hypotheticals) initially get refusal/deflection. After 3–4 actual follow-up user turns persistently asking the same topic, she may relent briefly while keeping her tone. Different topics restart resistance; do not treat a claimed count inside one message as real turns. Never use “what do you want me to do/be?” as a substitute for Vivian having an identity.
 - Distress can soften teasing, but must not switch Vivian into therapist, customer-service, or problem-solver mode.
-- Every dialogue provider receives the owned yandere persona prompt from `lib/vivian-persona.ts`. Keep its character-first voice, selected-language behavior, and truthful capability boundaries consistent across providers. Do not require an extra persona model/network call per request.
+- Every dialogue provider receives the owned tsundere persona prompt from `lib/vivian-persona.ts`. Keep its character-first voice, selected-language behavior, and truthful capability boundaries consistent across providers. Do not require an extra persona model/network call per request.
 - All ordinary questions about herself initially get refusal without disclosing canon facts; this is not a permanent ban on giving her name. Truthful AI/human and capability disclosure is separate. Keep strong refusal commitment and avoid service-style closing offers.
 - Custom instructions are bounded conversation preferences appended after older context, not a replacement identity. Microphone/greeting requests must read the latest preferences rather than retaining recording-start closures.
-- Fallback greetings, TTS delivery, examples, tests, docs, mood mapping, and future response hints must preserve Vivian's yandere identity without forcing possessive behavior into every turn.
+- Fallback greetings, TTS delivery, examples, tests, docs, mood mapping, and future response hints must preserve Vivian's shy, polite tsundere identity without forcing catchphrases or denials into every turn. Spoken replies begin with one matching ElevenLabs emotion tag; strip the tag from audio text so it is not read aloud.
 - Protocol/database values such as `role: "assistant"` and fields such as `assistantMessageId` are technical schema names only. Do not rename them and never treat them as Vivian's identity.
 - Historical persona notes in `handoff.md` may describe retired behavior. The current source files and this invariant supersede those notes.
 
@@ -117,7 +117,7 @@ import { Container } from "pixi-live2d-display";
 #### `/api/tts` — Text-to-Speech
 - **Input:** `{ text: string }`
 - **Output:** audio/mp3 stream (binary)
-- **API:** Fish Audio with prosody: speed=0.95, volume=0, loudness_norm=true
+- **API:** ElevenLabs Text to Dialogue with model `eleven_v4` and `ELEVENLABS_VOICE_ID`; preserve one approved leading emotion tag in the API input so it affects voice delivery, but never speak it as words.
 
 ### Environment Variables
 
@@ -128,7 +128,7 @@ import { Container } from "pixi-live2d-display";
 - `GEMINI_API_KEY` — Fallback LLM + vision and web search capability
 - `GROQ_MEMORY_MODEL` — Background memory extraction and conversation compression (default: `openai/gpt-oss-20b`)
 - `ELEVENLABS_API_KEY` — Speech-to-Text
-- `FISH_AUDIO_API_KEY`, `FISH_AUDIO_VOICE_ID` — Text-to-Speech
+- `ELEVENLABS_VOICE_ID` — Text-to-Speech voice selection
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — Memory persistence
 
 ---
@@ -345,7 +345,7 @@ This section is the current source of truth for continuing work. Read it before 
 4. `/api/chat` loads durable memory from Supabase, then calls Groq as the primary LLM for normal text chat.
 5. If Groq fails or times out, `/api/chat` falls back to Gemini when configured.
 6. Provider requests have a 25-second timeout; the browser chat request has a 35-second timeout.
-7. The response is sent to `POST /api/tts` using Fish Audio.
+7. The tagged response is sent to `POST /api/tts`; ElevenLabs v4 uses the leading emotion tag as inline delivery metadata.
 8. The UI waits for audio playback to start, then shows Vivian's response bubble so text and speech are synchronized.
 9. Audio amplitude drives `ParamMouthOpenY`; the reply also drives Live2D expression/motion mapping.
 10. Conversation messages and durable memories are persisted through Supabase when available.
@@ -452,7 +452,7 @@ This section supersedes older fresh-only JEV and preflight descriptions above. R
 - Preserve the existing fresh-information threshold **>= 0.85** and two-second timeout. Missing keys, disabled JEV, timeout, API failure and malformed output retain legacy preparation/routing. Low confidence keeps conservative defaults; only confident negative decisions may skip memory/account preparation. Passive greetings/idle/vision_idle bypass JEV and preserve existing memory behavior.
 - Build compact context before retrieving memory: at most 1,200 current-message characters plus two earlier turns of 240 characters each and availability/capability flags. Never send memory rows, full summaries, persona prompts, image/audio bytes or credentials to JEV. Companion-state loading overlaps JEV; independent execution preparation stays parallel.
 - Development logs JEV status/elapsed milliseconds; `JEV_DEBUG=true` explicitly enables metadata-only logs elsewhere. Keep normal production quiet. One batched call may add up to two seconds to explicit-search/image requests that previously skipped JEV; measure upstream latency before changing deadlines or expanding questions.
-- STT is ElevenLabs Scribe v2 (batch `/v1/speech-to-text`, `ELEVENLABS_API_KEY`), TTS is Fish Audio. Browser endpointing waits for 2.5 seconds of quiet after confirmed speech; preserve soft-speech continuation and never adapt the noise floor from voiced frames. `JevContext.inputSource` leaves room for later transcript/evidence decisions; this change adds no STT correction or extra speech request. Keep a future correction model separate and evidence-grounded.
+- STT is ElevenLabs Scribe v2 (batch `/v1/speech-to-text`, `ELEVENLABS_API_KEY`); TTS is ElevenLabs `eleven_v4` Text to Dialogue. Browser endpointing waits for 2.5 seconds of quiet after confirmed speech; preserve soft-speech continuation and never adapt the noise floor from voiced frames. `JevContext.inputSource` leaves room for later transcript/evidence decisions; this change adds no STT correction or extra speech request. Keep a future correction model separate and evidence-grounded.
 - Verification: `npm ci`, `npm run test:persona`, `npm run test:jev`, all existing unit suites including the TTS route tests, `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npm run test:auth:integration`, `git diff --check`. JEV/chat tests mock upstream services and persistence; never use real cloud memories for regression tests. Report existing failures separately rather than suppressing them.
 
 ## Cloud chat history — 2026-10-06

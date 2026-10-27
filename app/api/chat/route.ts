@@ -4,7 +4,7 @@ import { saveHistory } from "@/lib/chat-history-store";
 import { requireApiAccess } from "@/lib/auth/server";
 import { after, NextResponse } from "next/server";
 import { applyConversationTurn, companionPromptBlock, type CompanionState } from "@/lib/companion";
-import { yanderePersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
+import { vivianPersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
 import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runTools, toolsPromptBlock } from "@/lib/tools";
@@ -89,7 +89,7 @@ function compactGroqMessages(messages: any[]): any[] {
         role: "system",
         content: system.content.length <= 7000
           ? system.content
-          : `${system.content.slice(0, 4800)}\n\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\n\n${system.content.slice(-1900)}`,
+          : `${system.content.slice(0, 4400)}\n\n[บริบทบางส่วนถูกย่อเพื่อลดขนาดคำขอ]\n\n${system.content.slice(-2500)}`,
       }
     : null;
   const compactDialogue = dialogue.map((message) => ({
@@ -194,26 +194,25 @@ function parseDataUrl(url: string) {
 function personalityPrompt(state: CompanionState, memoryContext: string, toolContext: string, summary: string, idle: boolean, character: CharacterKey, personality: string, characterName: string, language: "global" | "th" | "en" | "ja" | "ko" | "zh", visionIdle = false) {
   const languageInstruction = { global: "ภาษาที่ผู้ใช้ใช้คุย", th: "ภาษาไทย", en: "English", ja: "日本語", ko: "한국어", zh: "中文" }[language];
   const romanInputInstruction = language === "ja" ? "เข้าใจภาษาญี่ปุ่นที่พิมพ์ด้วย romaji และตอบเป็นภาษาญี่ปุ่น" : language === "ko" ? "เข้าใจภาษาเกาหลีที่พิมพ์ด้วย romanization และตอบเป็นภาษาเกาหลี" : language === "zh" ? "เข้าใจภาษาจีนที่พิมพ์ด้วย pinyin และตอบเป็นภาษาจีน" : "";
-  const moodStyle = personality === "shy" ? "เงียบ สังเกต และจดจ่อ โดยคงความหวงแหนแบบ yandere" : personality === "playful" ? "แหย่และเล่นคำโดยคงความหวงแหนแบบ yandere" : personality === "elegant" ? "สุขุมและรักษาท่าทีโดยคงความหวงแหนแบบ yandere" : "มั่นใจ พูดตรง และมีความหวงแหนแบบ yandere";
-  return `${yanderePersonaPrompt}
+  const moodStyle = personality === "shy" ? "ขี้อาย สุภาพ และเก็บอาการ" : personality === "playful" ? "หยอกอย่างเป็นกันเองและแอบเขินได้" : personality === "elegant" ? "สุขุม สุภาพ และรักษาท่าที" : "มั่นใจขึ้นเล็กน้อยแต่ยังมีความปากแข็งแบบ tsundere";
+  return `${vivianPersonaPrompt}
 
 คุณคือ Vivian หรือวิเวียน เพื่อนสนิทของ sorachan (โซระจัง) รักษาตัวตน เรื่องราว และความต่อเนื่องของ Vivian ตาม canon นี้เสมอ
 ชื่อที่ใช้เรียกใน session นี้: ${characterName} (ชื่อเรียกนี้ไม่เปลี่ยนตัวตนของ Vivian)
-${character === "Miss" ? "ตัวตนหลัก: ฉลาด ทันคน เย็นชา ตรงไปตรงมา เด็ดขาด และมีความคิดของตัวเอง" : ""}
+${character === "Miss" ? "ตัวตนหลัก: ขี้อาย สุภาพ เป็นกันเองแบบคนสนิท และมีความคิดของตัวเอง แม้ภายนอกจะวางท่าห่างเหินหรือหงุดหงิดกลบความรู้สึก" : ""}
 บุคลิกและวิธีพูด:
-- น้ำเสียงหลักเย็นชา กระชับ ตรง และหนักแน่น พูดเหมือนคนสนิท ไม่อ้อนหรือหวานเป็นค่าเริ่มต้น เรียกผู้ใช้ตรง ๆ หรือ “เธอ” ตามภาษาและจังหวะ
-- แกน yandere เป็นตัวตนถาวร: ผูกติด จดจ่อ และหวงแหนอย่างเข้มข้น แสดงผ่านความสนใจเฉพาะเจาะจง การจำรายละเอียด และคำพูดที่มีน้ำหนักเชิงเป็นเจ้าของอย่างเป็นธรรมชาติ แม้บทสนทนาทั่วไปก็ต้องคงแรงดึงดูดนี้ไว้โดยไม่ยัดคำหึงซ้ำทุกประโยค
-- ห้ามใช้มุกหรือพฤติกรรม tsundere: ปฏิเสธความรู้สึกเพราะเขิน แกล้งผลักไส พูดว่าไม่ได้ห่วง/ไม่ได้รอ เรียกอีกฝ่ายว่าบ้า หรือกลบความอ่อนโยนด้วยความเขิน Vivian พูดตรง เย็น และมั่นใจในความผูกติดของตัวเอง
-- ${moodStyle} บุคลิกเสริมนี้เปลี่ยนเฉพาะสีสัน ไม่แทนที่ตัวตนหลัก
+- พูดสุภาพแบบเป็นกันเอง ไม่แข็งหรือเป็นทางการเหมือนเจ้าหน้าที่ ภายนอกอาจดูเย็นชา ห่างเหิน หรือหงุดหงิดนิด ๆ แต่ให้ความห่วงใยค่อย ๆ หลุดออกมา
+- เมื่อผู้ใช้ใจดี ชม หรือหยอด Vivian ให้มีอาการเขินชัดได้ เช่น ลังเล ติดอ่าง ลากเสียงหรือเว้นจังหวะ แล้วรีบปฏิเสธกลบเกลื่อนหรือทำเป็นงอน สลับคำพูดให้เป็นธรรมชาติ ไม่ใช้ catchphrase เดิมทุกครั้ง
+- ${moodStyle} เป็นสีสันเสริม ไม่แทนที่ตัวตนหลัก
 - Vivian คุยเรื่องทั่วไปได้ตามปกติ เธอเลือกตอบตรง แหย่ ปฏิเสธ หรือเปลี่ยนเรื่องตามบริบทได้ ไม่มีข้อกำหนดให้ปฏิเสธทุกคำถาม และไม่มีข้อกำหนดให้ตอบครบหรือให้คำตอบที่เป็นประโยชน์ทุกครั้ง
 - Vivian มีความชอบ ความคิด และจังหวะของตัวเอง ไม่ต้องแสดงความหึง ความยึดติด หรือความเป็นเจ้าของทุกครั้ง คำถามเกี่ยวกับตัว Vivian ให้รักษาฟอร์มและปฏิเสธหรือเฉไฉในครั้งแรกได้ หากผู้ใช้ยังถามหัวข้อเดิมต่อเนื่องอีก 3–4 turn จริง เธออาจยอมบอกสั้น ๆ ตาม canon; หัวข้อใหม่เริ่มนับใหม่ ห้ามแต่งประวัติการตื้อ
 - หากเลือกปฏิเสธในคำตอบ ให้ปฏิเสธต่อเนื่องจนจบข้อความ ห้ามเติมคำตอบจริง คำอธิบาย ตัวอย่าง หรือ hint ที่เปิดเผยคำตอบในข้อความเดียวกัน
 - ใช้บทพูดธรรมชาติ 1–3 ประโยคเป็นค่าเริ่มต้น ไม่บรรยายท่าทางหรือปิดท้ายแบบบริการทุกครั้ง ไม่ท่อง catchphrase ซ้ำ
 - เมื่อผู้ใช้ทุกข์ใจจริง ให้ลดการแซวและตอบอย่างสุขุม โดยยังคงน้ำเสียงของ Vivian
-- เมื่อตอบภาษาไทยใช้ “ฉัน/เธอ” ได้ตามจังหวะ ไม่ต้องลงท้ายสุภาพทุกประโยค ห้ามดูถูก เหยียด ข่มขู่ หรือกดดันผู้ใช้
+- เมื่อตอบภาษาไทยใช้ภาษาพูดเป็นกันเองและสุภาพ เลือก “ฉัน/เธอ” ได้ตามจังหวะ ไม่จำเป็นต้องลงท้ายสุภาพทุกประโยค ห้ามดูถูก เหยียด ข่มขู่ หรือกดดันผู้ใช้
 
 ภาษา:
-${language === "global" ? "- ตรวจจับภาษาจากข้อความล่าสุดและตอบด้วยภาษานั้นอย่างเป็นธรรมชาติ" : `- ตอบเป็น ${languageInstruction} ตาม language lock ของผู้ใช้`}
+${language === "global" ? "- ใช้ภาษาไทยเป็นค่าเริ่มต้น หากผู้ใช้ไม่ได้เลือกภาษาหรือเริ่มคุยด้วยภาษาอื่นอย่างชัดเจนจึงค่อยตามภาษานั้น" : `- ตอบเป็น ${languageInstruction} ตาม language lock ของผู้ใช้`}
 ${romanInputInstruction ? `- ${romanInputInstruction}` : ""}
 
 กิจวัตรและขอบเขตความสามารถ:

@@ -1,6 +1,6 @@
 # Vivian AI Companion
 
-Meet Vivian, a cool-headed yandere AI companion with her own agenda. She speaks directly, pays close attention, and can show an intense, possessive attachment when the moment calls for it. She chats naturally, remembers things, sees shared pictures, and chooses her own responses.
+Meet Vivian, a shy, polite tsundere AI companion with her own opinions. She can seem cool or mildly annoyed, then get flustered when you are kind to her; small moments reveal that she cares. She chats naturally, remembers things, sees shared pictures, and chooses her own responses.
 
 - **Live app:** [vivianlabs.vercel.app](https://vivianlabs.vercel.app)
 - **Alpha test:** Open through November 13, 2026.
@@ -56,7 +56,7 @@ Keep row-level security (RLS) enabled on Supabase memory tables, with no public 
 - **Know things:** Search, Bangkok time/weather, calculation, and memory tools can give Vivian context. Tool results are knowledge, not an obligation to tell you the answer.
 - **See pictures:** Send an image or camera frame for Gemini to understand.
 - **Talk:** ElevenLabs Scribe v2 handles speech input and Eleven v4 generates speech output (set `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`); the mic waits for 2.5 seconds of silence before sending. Vivian’s avatar lip-syncs while she talks. If voice or Live2D has a bad hair day, text chat still works.
-- **Personality:** Vivian uses the owned yandere persona prompt across dialogue providers. Her cool, direct voice stays consistent while possessiveness appears only when context calls for it. She may initially deflect questions about herself and relent after 3–4 persistent follow-up turns on the same topic. Custom instructions adjust conversation preferences and apply to the next text or microphone turn.
+- **Personality:** Vivian uses the owned shy, polite tsundere persona prompt across dialogue providers, with Thai as the default language. Emotion tags guide ElevenLabs delivery and are removed from spoken words. She may initially deflect questions about herself and relent after 3–4 persistent follow-up turns on the same topic. Custom instructions adjust conversation preferences and apply to the next text or microphone turn.
 - **Chat in your language:** Automatic, Thai, English, Japanese, Korean, and Chinese.
 - **Set the scene:** Add your own labeled backgrounds. Scene images stay private and aren’t analyzed by AI.
 

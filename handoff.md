@@ -497,3 +497,14 @@ Follow up only where needed: verify live Google provider configuration and produ
 
 - Normal text chat now defaults to Groq model `qwen/qwen3.8-27b`; `GROQ_MODEL` can still override it. Memory extraction remains on `GROQ_MEMORY_MODEL`.
 - Production `GROQ_MODEL` is configured through Vercel CLI to use `qwen/qwen3.8-27b`.
+
+# Memory compaction model — 2026-10-27
+
+- `GROQ_MEMORY_MODEL` is explicitly set to `openai/gpt-oss-20b` in Vercel Production, Preview and Development. The chat route uses it for both durable memory extraction and conversation-summary compaction, while normal dialogue remains on `GROQ_MODEL` (Qwen 3.8 27B).
+- Added a chat-route regression test proving Qwen handles the response and OSS 20B handles compaction. No deployment was performed; the environment change applies to future deployments/runtime configuration.
+
+# Shy tsundere persona and ElevenLabs emotion tags — 2026-10-27
+
+- Replaced the active dialogue-provider persona instructions with the user-requested shy, polite, slightly awkward tsundere Vivian; Thai is the default when no language is selected. Updated the main chat prompt, relationship/mood guidance, story canon, optional examples, model descriptions, TTS cues, README and agent guidance. The legacy persisted mood key remains compatible and now represents flustered/guarded reactions.
+- Spoken replies are instructed to start with one of the user's approved emotion tags. The TTS route extracts a valid leading tag, keeps it inline for ElevenLabs v4 delivery, and strips it from spoken words. Confirmed v4 Text to Dialogue supports inline audio tags in the official API documentation.
+- This change is local and undeployed pending user review. Targeted persona, speech/TTS, companion and chat/JEV tests plus TypeScript and diff checks are being run; no production request or deployment was made.

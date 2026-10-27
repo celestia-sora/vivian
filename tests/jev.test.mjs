@@ -98,7 +98,7 @@ test("ambiguous decisions use conservative defaults and produce no response guid
 
 test("response guidance is static, confidence-gated, and preserves Vivian's personality", () => {
   const supportive = plan(context("I need reassurance"), { supportive_response: 0.99 });
-  assert.match(supportive.responseHint, /vulnerable turn.*quieter.*yandere voice/);
+  assert.match(supportive.responseHint, /vulnerable turn.*quieter.*guarded tsundere voice/);
   const explanatory = plan(context("Explain it"), { explanatory_response: 0.95 });
   assert.match(explanatory.responseHint, /Treat the explanation request as another conversational move/);
   const decision = jev.parseJevDecision(answers({ needs_weather: 0.97 }));
@@ -223,7 +223,7 @@ for (const phase of ["headers", "body"]) {
 
 // Exercise the actual chat route, JEV client, parser and plan; mock only auth,
 // persistence and upstream services. Never send test messages to cloud memory.
-function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, timeout = 2000, sceneContext = null, sceneFailure = false, sceneExecutionFailure = false } = {}) {
+function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, geminiReply, timeout = 2000, sceneContext = null, sceneFailure = false, sceneExecutionFailure = false } = {}) {
   const calls = [], background = [], memoryLoads = [];
   const providerEnv = { TYPESAFE_API_KEY: "fixture-jev", GROQ_API_KEY: "fixture-groq", GEMINI_API_KEY: "fixture-gemini", SUPABASE_URL: "fixture-db", SUPABASE_SERVICE_ROLE_KEY: "fixture-admin", ...env };
   const fixtureJev = client(async (url, options) => {
@@ -247,7 +247,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, tim
     "@/lib/supabase-admin": { getSupabaseAdmin() {
       return { from(table) {
         assert.equal(table, "memories"); memoryLoads.push(table);
-        const query = { select() { return query; }, eq() { return query; }, order() { return query; }, limit() { return Promise.resolve({ data: [{ id: 1, memory: "Likes tea", category: "preference", importance: 3 }] }); } };
+        const query = { select() { return query; }, eq() { return query; }, order() { return query; }, update() { return query; }, in() { return Promise.resolve({ data: null, error: null }); }, upsert() { return Promise.resolve({ data: null, error: null }); }, limit() { return Promise.resolve({ data: [{ id: 1, memory: "Likes tea", category: "preference", importance: 3 }] }); } };
         return query;
       } };
     } },
@@ -264,7 +264,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, tim
     fetch: async (url, options) => {
       const body = JSON.parse(options.body);
       if (url.includes("groq.com")) { calls.push({ kind: "groq", body }); return groqReply ? groqReply(body) : Response.json({ choices: [{ message: { content: "Vivian fixture reply" } }] }); }
-      if (url.includes("generativelanguage.googleapis.com")) { calls.push({ kind: "gemini", body }); return Response.json({ candidates: [{ content: { parts: [{ text: "Gemini fixture reply" }] } }] }); }
+      if (url.includes("generativelanguage.googleapis.com")) { calls.push({ kind: "gemini", body }); return geminiReply ? geminiReply(body) : Response.json({ candidates: [{ content: { parts: [{ text: "Gemini fixture reply" }] } }] }); }
       assert.fail(`Unexpected service request: ${url}`);
     },
   });
@@ -273,7 +273,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, tim
   } };
 }
 
-test("chat integrates a single JEV pass; state starts in parallel; main LLM receives the yandere persona and memories", async () => {
+test("chat integrates a single JEV pass; state starts in parallel; main LLM receives the tsundere persona and memories", async () => {
   const fixture = chatFixture({ values: { needs_memory: 0.99 } });
   const response = await fixture.post();
   assert.equal(response.status, 200);
@@ -282,10 +282,29 @@ test("chat integrates a single JEV pass; state starts in parallel; main LLM rece
   assert.equal(fixture.calls[0].kind, "state");
   const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
   assert.match(prompt, /Vivian/); assert.match(prompt, /Likes tea/);
-  assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
-  assert.match(prompt, /intensely attached, quietly possessive/);
+  assert.ok(prompt.startsWith(persona.vivianPersonaPrompt));
+  assert.match(prompt, /shy, polite, slightly awkward tsundere manner/);
+  assert.match(prompt, /exactly one matching ElevenLabs emotion tag/);
   assert.equal(prompt.includes(dialogue.VIVIAN_DIALOGUE_EXAMPLE), false);
   assert.equal(fixture.background.length, 1);
+});
+
+test("Qwen handles dialogue while OSS 20B compacts conversation memory", async () => {
+  const fixture = chatFixture({ env: { GROQ_MODEL: "qwen/qwen3.8-27b", GROQ_MEMORY_MODEL: "openai/gpt-oss-20b" } });
+  const messages = Array.from({ length: 16 }, (_, index) => ({ role: index % 2 ? "assistant" : "user", content: `Turn ${index + 1}` }));
+  messages[messages.length - 1] = { role: "user", content: "2 + 2" };
+  assert.equal((await fixture.post("2 + 2", {
+    messages,
+    conversationId: "11111111-1111-4111-8111-111111111111",
+    userMessageId: "22222222-2222-4222-8222-222222222222",
+    assistantMessageId: "33333333-3333-4333-8333-333333333333",
+    conversationCreate: false,
+  })).status, 200);
+  await fixture.background[0]();
+  const groqCalls = fixture.calls.filter((call) => call.kind === "groq");
+  assert.equal(groqCalls[0].body.model, "qwen/qwen3.8-27b");
+  const compaction = groqCalls.find((call) => call.body.messages[0].content.includes("Summarize this companion chat"));
+  assert.equal(compaction.body.model, "openai/gpt-oss-20b");
 });
 
 test("chat fresh request uses Gemini search; explicit search survives low JEV confidence", async () => {
@@ -323,7 +342,7 @@ test("chat skips irrelevant durable memory, executes approved local tools and ad
   assert.deepEqual(body.tools, ["calculator"]);
   assert.equal(fixture.memoryLoads.length, 0);
   const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
-  assert.match(prompt, /= 4/); assert.match(prompt, /Treat the explanation request as another conversational move/); assert.match(prompt, /ฉันจะไม่บอกเธอหรอก/); assert.doesNotMatch(prompt, /ตอบเนื้อหาให้ครบตามที่ขอ|Explain the answer clearly/);
+  assert.match(prompt, /= 4/); assert.match(prompt, /Treat the explanation request as another conversational move/); assert.match(prompt, /If she refuses, keep that refusal for the rest of the message/); assert.doesNotMatch(prompt, /ตอบเนื้อหาให้ครบตามที่ขอ|Explain the answer clearly/);
 });
 
 test("chat executes a semantic time decision even without an existing time regex match", async () => {
@@ -396,9 +415,9 @@ test("optional voice examples are not injected into the runtime system prompt", 
   const fixture = chatFixture({ values: { needs_current_information: 0.01 } });
   assert.equal((await fixture.post("เมื่อกี้มีคนมาจีบเรา")).status, 200);
   const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
-  assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
+  assert.ok(prompt.startsWith(persona.vivianPersonaPrompt));
   assert.equal(prompt.includes(dialogue.VIVIAN_DIALOGUE_EXAMPLE), false);
-  assert.equal(dialogue.vivianDialoguePrompt("เมื่อกี้มีคนมาจีบเรา").includes("focused jealousy"), true);
+  assert.equal(dialogue.vivianDialoguePrompt("เมื่อกี้มีคนมาจีบเรา").includes("flustered"), true);
 });
 
 test("passive greeting bypasses JEV and background persistence; access denial stops all preflight", async () => {
@@ -423,7 +442,11 @@ for (const provider of ["groq", "gemini"]) {
         tool_calls: [{ id: "call-1", function: { name: "DISCORD_SEND", arguments: '{"text":"hello"}' } }],
       } }] });
     };
-    const fixture = chatFixture({ values: { needs_integrations: 1 }, env: {}, groqReply: reply });
+    const fixture = chatFixture({ values: { needs_integrations: 1 }, env: provider === "gemini" ? { GROQ_API_KEY: "" } : {}, groqReply: reply, geminiReply: (body) => {
+      assert.equal(body.tools, undefined);
+      assert.equal(body.tool_choice, undefined);
+      return Response.json({ candidates: [{ content: { parts: [{ text: "External apps are unavailable" }] } }] });
+    } });
     const response = await fixture.post("send on discord");
     assert.equal(response.status, 200);
     assert.equal((await response.json()).text, "External apps are unavailable");
@@ -431,8 +454,9 @@ for (const provider of ["groq", "gemini"]) {
     assert.equal(state.capabilities.integrations, false);
     assert.deepEqual(state.toolkitCandidates, []);
     assert.equal(fixture.calls.filter((call) => call.kind === provider).length, 1);
-    const prompt = fixture.calls.find((call) => call.kind === provider).body.messages[0].content;
-    assert.match(prompt, /ยังไม่ได้เชื่อมต่อแอปภายนอก/);
+    const requestBody = fixture.calls.find((call) => call.kind === provider).body;
+    const prompt = provider === "gemini" ? requestBody.systemInstruction.parts[0].text : requestBody.messages[0].content;
+    assert.match(prompt, /การเชื่อมต่อแอปภายนอก.*ยังใช้ไม่ได้/);
   });
 }
 
@@ -504,7 +528,7 @@ test("scene context or execution/storage failure cannot prevent normal chat from
 });
 
 
-test("yandere persona and latest custom instructions reach all dialogue providers", async () => {
+test("tsundere persona and latest custom instructions reach all dialogue providers", async () => {
   const customInstructions = "เรียกฉันว่าโซระ และพูดให้สั้น";
   for (const [provider, options] of [
     ["groq", {}],
@@ -514,8 +538,8 @@ test("yandere persona and latest custom instructions reach all dialogue provider
     assert.equal((await fixture.post("สวัสดี ฉันชื่อโซระจัง เธอคือใคร", {customInstructions, language:"th"})).status,200);
     const body=fixture.calls.find(call=>call.kind===provider).body;
     const prompt=provider==="gemini" ? body.systemInstruction.parts[0].text : body.messages[0].content;
-    assert.ok(prompt.startsWith(persona.yanderePersonaPrompt));
-    assert.match(prompt,/# Vivian — yandere companion/);
+    assert.ok(prompt.startsWith(persona.vivianPersonaPrompt));
+    assert.match(prompt,/# Vivian — shy, polite tsundere companion/);
     assert.match(prompt,/ตอบเป็น ภาษาไทย/);
     assert.match(prompt,/คำถามเกี่ยวกับตัว Vivian/);
     assert.match(prompt,/three or four genuine follow-up turns/);
@@ -523,12 +547,12 @@ test("yandere persona and latest custom instructions reach all dialogue provider
   }
 });
 
-test("custom instructions are bounded; empty preferences still get the persistent yandere persona", async () => {
+test("custom instructions are bounded; empty preferences still get the persistent tsundere persona", async () => {
   for(const customInstructions of ["", "x".repeat(2100)]) {
     const fixture=chatFixture(); await fixture.post("วันนี้เหนื่อย",{customInstructions});
     const prompt=fixture.calls.find(call=>call.kind==="groq").body.messages[0].content;
-    assert.match(prompt,/# Vivian — yandere companion/);
-    if(customInstructions) {assert.ok(prompt.endsWith("x".repeat(2000)));assert.equal(prompt.includes("x".repeat(2001)),false);}
+    assert.match(prompt,/# Vivian — shy, polite tsundere companion/);
+    if(customInstructions) {assert.ok(prompt.endsWith("x".repeat(1200)));assert.equal(prompt.includes("x".repeat(1201)),false);}
     else assert.doesNotMatch(prompt,/Conversation preferences for this turn/);
     assert.doesNotMatch(prompt,/ตานี้ถูกถามชื่อ/);
   }

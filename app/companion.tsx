@@ -61,9 +61,9 @@ const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName:
   { code: "zh", label: "Chinese", nativeName: "CN" },
 ];
 const greetings = [
-  "มาแล้ว? ว่ามา มีอะไร",
-  "ถ้าจะคุยก็พูดตรง ๆ",
-  "มีเรื่องอะไรก็พูดมา อย่าอ้อมค้อม",
+  "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
+  "[curious] อ้อ มาแล้วเหรอคะ… มีเรื่องอะไรอยากเล่าให้ฉันฟังคะ? มะ-ไม่ได้อยากรู้เป็นพิเศษนะ",
+  "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
 ];
 const greeting = (): Message => historyMessage("vivian", greetings[Math.floor(Math.random() * greetings.length)]);
 const GREETING_PENDING = "Vivian กำลังคิดว่าจะกวนคุณยังไง...";
@@ -1292,7 +1292,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       playful: /happy|smile|excited|laugh|笑|开心|ดีใจ/i,
       tired: /tired|sleep|眠|困|ง่วง/i,
       melancholy: /sad|cry|tear|悲|哭|เศร้า/i,
-      yandere: /angry|mad|jealous|possessive|intense|pout|怒|生气|งอน|หึง|หวง/i,
+      yandere: /angry|mad|jealous|intense|pout|embarrass|fluster|shy|怒|生气|งอน|เขิน|หน้าแดง|หึง/i,
     };
     const expression = supportedExpressions.find((name) => name.trim() === authoredExpression.trim())
       ?? supportedExpressions.find((name) => emotionNames[mood].test(name));

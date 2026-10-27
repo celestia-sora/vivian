@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fishSpeechText, speechSpeed, speechStyle, speechText } from "../lib/speech.ts";
+import { fishSpeechText, speechEmotionTag, speechSpeed, speechStyle, speechText } from "../lib/speech.ts";
 
 test("spoken replies omit stage directions and sources but retain dialogue and explanations", () => {
   assert.equal(speechText("(หลบตา) ไม่ได้รอหรอก... **Vivian** อ่าน [เรื่องนี้](https://example.com) (เวอร์ชัน 2)\nแหล่งข้อมูล:\n- https://example.com"), "ไม่ได้รอหรอก… Vivian อ่าน เรื่องนี้ (เวอร์ชัน สอง)");
@@ -9,7 +9,7 @@ test("spoken replies omit stage directions and sources but retain dialogue and e
   assert.equal(speechText("(หลบตา)"), "");
 });
 
-test("yandere delivery stays controlled and vulnerable moments take priority", () => {
+test("tsundere delivery stays guarded and vulnerable moments take priority", () => {
   assert.equal(speechStyle("หวงเธอ อย่ามายุ่งกับฉัน").delivery, "reserved");
   assert.equal(speechStyle("ไม่เป็นไร ฉันฟังอยู่ ไม่ได้เป็นห่วงสักหน่อย").delivery, "gentle");
   assert.equal(speechStyle("เล่ามาสิ ฉันฟังอยู่~").delivery, "gentle");
@@ -19,7 +19,15 @@ test("yandere delivery stays controlled and vulnerable moments take priority", (
   assert.equal(speechStyle("...ไง มีอะไรเหรอ?").delivery, "reserved");
   assert.equal(speechStyle("โธ่ อย่าแซวสิ").delivery, "reserved");
   assert.equal(speechStyle("ฉันหวงเธอ").delivery, "reserved");
-  assert.match(speechStyle("ฉันหวงเธอ").cue, /quietly intense, possessive but controlled/);
+  assert.match(speechStyle("ฉันหวงเธอ").cue, /quietly jealous, guarded/);
+});
+
+test("ElevenLabs emotion tags are metadata and never enter spoken audio", () => {
+  assert.equal(speechText("[playful] Hmph… I'm not blushing!"), "Hmph… I'm not blushing!");
+  assert.equal(speechText("[let down] วันนี้เหนื่อยนิดหน่อย", "th"), "วันนี้เหนื่อยนิดหน่อย");
+  assert.equal(speechEmotionTag("[playful] Hmph… I'm not blushing!"), "[playful]");
+  assert.equal(speechEmotionTag("[custom fake] this is not an approved tag"), "");
+  assert.equal(speechText("A [curious] tag in the middle stays ordinary text"), "A curious tag in the middle stays ordinary text");
 });
 
 test("romaji stammers keep every attempted syllable without spelling the letter B", () => {
