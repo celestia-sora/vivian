@@ -243,6 +243,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, gem
     "@/lib/vivian-story": story,
     "@/lib/vivian-dialogue": dialogue,
     "@/lib/vivian-persona": persona,
+    "@/lib/speech": load("../lib/speech.ts"),
     "@/lib/companion-store": { loadCompanionState: async () => { calls.push({ kind: "state" }); return companion.defaultCompanionState(); }, saveCompanionState: () => assert.fail("Background writes must not run in fixtures") },
     "@/lib/supabase-admin": { getSupabaseAdmin() {
       return { from(table) {

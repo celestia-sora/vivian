@@ -522,3 +522,10 @@ Follow up only where needed: verify live Google provider configuration and produ
 - Clarified the canon in `lib/vivian-story.ts` and now inject it into the chat system prompt. The prompt explicitly maps Vivian (วิเวียน) to the speaking character and sorachan (โซระจัง) to the user, her close friend; references to sorachan always mean the user. Their closeness grows through real conversations; do not invent shared events or memories.
 - Aligned the owned persona prompt with the same identity mapping.
 - Verification: `npx tsc --noEmit` and `git diff --check`.
+
+# Reply length cap and natural audio tags - 2026-10-28
+
+- System prompt now caps spoken replies at 1,000 characters including audio tags, and keeps the default at one to three short sentences. The persona adds an explicit Length block; the Thai runtime prompt carries the same limit plus guidance to answer only the essential part when a topic needs more.
+- ElevenLabs tag guidance was rewritten for natural use: most replies need no tag, one or two well-placed tags are the norm, never stack tags, never tag every sentence, never contradict the line's emotion. Tag placement rules and the no-spoken-tags rule are unchanged.
+- `lib/speech.ts` exports `replyCharacterLimit`, `visibleReplyLength` and `limitReplyCharacters`. `/api/chat` applies the cap to the generated dialogue before citations are appended, so sources and audio tags do not consume the budget. Chat `maxOutputTokens` dropped from 2500 to 1200; greetings and passive turns are unchanged.
+- Verification: `npm run test:persona` (2/2), `npm run test:speech` (20/20), `npm run test:jev` (60/60), `npm run test:companion` (6/6), `npx tsc --noEmit`, `npm run build` and `git diff --check`. `npm run lint` still reports the pre-existing explicit-any and setState-in-effect errors in `app/api/chat/route.ts` and other untouched files; the changed `lib/speech.ts` and `lib/vivian-persona.ts` are clean.

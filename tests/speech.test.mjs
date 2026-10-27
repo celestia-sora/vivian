@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fishSpeechText, speechEmotionTag, speechSpeed, speechStyle, speechText } from "../lib/speech.ts";
+import { fishSpeechText, limitReplyCharacters, replyCharacterLimit, speechEmotionTag, speechSpeed, speechStyle, speechText, visibleReplyLength } from "../lib/speech.ts";
 
 test("spoken replies omit stage directions and sources but retain dialogue and explanations", () => {
   assert.equal(speechText("(หลบตา) ไม่ได้รอหรอก... **Vivian** อ่าน [เรื่องนี้](https://example.com) (เวอร์ชัน 2)\nแหล่งข้อมูล:\n- https://example.com"), "ไม่ได้รอหรอก… Vivian อ่าน เรื่องนี้ (เวอร์ชัน สอง)");
@@ -133,4 +133,22 @@ test("Thai numbers use the context's reading and leave chat text untouched", () 
 test("Markdown stage directions and links do not become spoken instructions", () => {
   assert.equal(speechText("# **ไม่ใช่ซะหน่อย**\n*กอดอก* ด- ด- เดี๋ยว! [ถอนหายใจ] [อ่านนี่](https://example.com) ![รูป](https://example.com/a.png) www.example.com\n```js\nthrow 123\n```", "th"), "ไม่ใช่ซะหน่อย ด… ด… เดี๋ยว! อ่านนี่");
   assert.equal(speechText("**ราคา 15 บาท** (ค่า 3.14)", "th"), "ราคา สิบห้าบาท (ค่า สามจุดหนึ่ง สี่)");
+});
+
+test("replies are capped at 1,000 visible characters without breaking audio tags", () => {
+  assert.equal(replyCharacterLimit, 1000);
+  const short = "[playful] ก็… ไม่ได้รอสักหน่อยนะ";
+  assert.equal(limitReplyCharacters(short), short);
+  // Tags are metadata and never eat the visible budget.
+  const tagged = "[playful] " + "ก".repeat(990) + "[sighing]";
+  assert.equal(limitReplyCharacters(tagged), tagged);
+  const long = "สวัสดี " + "ก".repeat(3000);
+  const limited = limitReplyCharacters(long);
+  assert.ok(visibleReplyLength(limited) <= 1000, String(visibleReplyLength(limited)));
+  assert.match(limited, /…$/u);
+  // Truncation must never leave a half-open tag behind.
+  const tagNearEdge = "ก".repeat(998) + "[playful] ต่ออีกยาว";
+  const edge = limitReplyCharacters(tagNearEdge);
+  assert.equal((edge.match(/\[/gu) ?? []).length, (edge.match(/\]/gu) ?? []).length);
+  assert.ok(visibleReplyLength(edge) <= 1000);
 });

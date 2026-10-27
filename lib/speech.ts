@@ -152,6 +152,45 @@ export function speechTextWithAudioTags(value: string, language = "global"): str
   return prepareSpeechText(value, language, true);
 }
 
+// Spoken replies stay one readable, speakable message. Audio tags are delivery
+// metadata, so they never consume the visible character budget. A trimmed
+// reply prefers a whitespace boundary and never leaves a half-open tag behind.
+export const replyCharacterLimit = 1000;
+const replyAudioTag = /\[[^\]\n]{1,120}\]/gu;
+
+export function visibleReplyLength(value: string): number {
+  return value.replace(replyAudioTag, "").length;
+}
+
+export function limitReplyCharacters(value: string, max = replyCharacterLimit): string {
+  if (visibleReplyLength(value) <= max) return value;
+  // Reserve one character for the ellipsis so the trimmed reply still fits.
+  const budget = Math.max(0, max - 1);
+  let kept = "";
+  let visible = 0;
+  let boundary = 0;
+  for (let index = 0; index < value.length && visible < budget;) {
+    if (value[index] === "[") {
+      const close = value.indexOf("]", index);
+      const candidate = close === -1 ? "" : value.slice(index, close + 1);
+      if (candidate && !candidate.includes("\n")) {
+        kept += candidate;
+        index = close + 1;
+        continue;
+      }
+    }
+    kept += value[index];
+    visible += 1;
+    index += 1;
+    if (/\s/u.test(value[index - 1])) boundary = kept.length;
+  }
+  // Thai often has no spaces to break on, so only prefer the boundary when it
+  // keeps most of the reply.
+  if (boundary > 0 && boundary >= kept.length * 0.6) kept = kept.slice(0, boundary);
+  kept = kept.replace(/\s+$/u, "");
+  return `${kept}…`;
+}
+
 export function speechStyle(value: string): SpeechStyle {
   // Vulnerable moments take precedence over intense character styling.
   if (/เศร้า|เสียใจ|ร้องไห้|เหนื่อย|ไม่เป็นไร|ฉันฟังอยู่|อยู่ตรงนี้|พักก่อน|sad|sorry|it's okay|i(?:'m| am) here|take your time|大丈夫|괜찮|没关系/iu.test(value)) {

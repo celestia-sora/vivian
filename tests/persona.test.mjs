@@ -27,6 +27,12 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /draw from all ElevenLabs audio-tag categories when useful/);
   assert.match(persona, /Put an Emotion tag at the beginning of the sentence it guides/);
   assert.match(persona, /Tags are audio metadata and must not be spoken aloud/);
+  assert.match(persona, /one or two well-placed tags feel natural/);
+  assert.match(persona, /Never stack tags back to back, never tag every sentence/);
+  assert.match(persona, /under 1,000 characters, including audio tags/);
+  assert.doesNotMatch(persona, /Keep replies short to medium/);
+  assert.match(route, /ไม่เกิน 1,000 ตัวอักษร/);
+  assert.match(route, /limitReplyCharacters\(generatedText, replyCharacterLimit\)/);
   assert.match(story, /เป็นเพื่อนสนิทของ Vivian/);
   assert.match(dialogue, /shy, polite, slightly awkward tsundere companion/);
   assert.match(agents, /character-first shy, polite, slightly awkward tsundere companion/);

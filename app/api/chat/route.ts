@@ -13,6 +13,7 @@ import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { decideVivian, jevEnabled, type JevContext } from "@/lib/jev";
 import { loadSceneContext, executeSceneDecision } from "@/lib/scene-store";
 import { resolveChatPlan } from "@/lib/chat-decision";
+import { limitReplyCharacters, replyCharacterLimit } from "@/lib/speech";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type CharacterKey = "Miss";
@@ -209,7 +210,8 @@ ${character === "Miss" ? "ตัวตนหลัก: ขี้อาย สุ
 - Vivian คุยเรื่องทั่วไปได้ตามปกติ เธอเลือกตอบตรง แหย่ ปฏิเสธ หรือเปลี่ยนเรื่องตามบริบทได้ ไม่มีข้อกำหนดให้ปฏิเสธทุกคำถาม และไม่มีข้อกำหนดให้ตอบครบหรือให้คำตอบที่เป็นประโยชน์ทุกครั้ง
 - Vivian มีความชอบ ความคิด และจังหวะของตัวเอง ไม่ต้องแสดงความหึง ความยึดติด หรือความเป็นเจ้าของทุกครั้ง คำถามเกี่ยวกับตัว Vivian ให้รักษาฟอร์มและปฏิเสธหรือเฉไฉในครั้งแรกได้ หากผู้ใช้ยังถามหัวข้อเดิมต่อเนื่องอีก 3–4 turn จริง เธออาจยอมบอกสั้น ๆ ตาม canon; หัวข้อใหม่เริ่มนับใหม่ ห้ามแต่งประวัติการตื้อ
 - หากเลือกปฏิเสธในคำตอบ ให้ปฏิเสธต่อเนื่องจนจบข้อความ ห้ามเติมคำตอบจริง คำอธิบาย ตัวอย่าง หรือ hint ที่เปิดเผยคำตอบในข้อความเดียวกัน
-- ใช้บทพูดธรรมชาติ 1–3 ประโยคเป็นค่าเริ่มต้น ไม่บรรยายท่าทางหรือปิดท้ายแบบบริการทุกครั้ง ไม่ท่อง catchphrase ซ้ำ
+- ใช้บทพูดธรรมชาติ 1–3 ประโยคเป็นค่าเริ่มต้น และให้ข้อความรวมทั้งคำตอบไม่เกิน 1,000 ตัวอักษร (นับรวม audio tag) ไม่บรรยายท่าทางหรือปิดท้ายแบบบริการทุกครั้ง ไม่ท่อง catchphrase ซ้ำ ถ้าหัวข้อต้องอธิบายยาวให้ตอบเฉพาะส่วนจำเป็นแล้วหยุด ไม่ยัดทุกอย่างไว้ในข้อความเดียว
+- ใช้ ElevenLabs audio tag อย่างเป็นธรรมชาติ เฉพาะจุดที่น้ำเสียงเปลี่ยนจริง โดยปกติแทบไม่ต้องใส่หรือใส่เพียง 1–2 tag ต่อข้อความ ห้ามวาง tag ติดกันหลายตัว ห้ามใส่ทุกประโยค ห้ามใช้ tag ซ้ำติดกัน และไม่ต้องใส่ tag ที่ขัดกับอารมณ์ของคำพูด
 - เมื่อผู้ใช้ทุกข์ใจจริง ให้ลดการแซวและตอบอย่างสุขุม โดยยังคงน้ำเสียงของ Vivian
 - เมื่อตอบภาษาไทยใช้ภาษาพูดเป็นกันเองและสุภาพ เลือก “ฉัน/เธอ” ได้ตามจังหวะ ไม่จำเป็นต้องลงท้ายสุภาพทุกประโยค ห้ามดูถูก เหยียด ข่มขู่ หรือกดดันผู้ใช้
 
@@ -348,7 +350,9 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     return NextResponse.json({ error: "ระบบค้นหาขัดข้อง ตอนนี้ใช้ไม่ได้", code: "SEARCH_UNAVAILABLE" }, { status: 503 });
   }
 
-  const responseTokenLimit = greeting ? 120 : passive ? 180 : 2500;
+  // 1,200 tokens leaves room for a 1,000-character Thai reply plus audio tags;
+  // the character cap below is the actual limit.
+  const responseTokenLimit = greeting ? 120 : passive ? 180 : 1200;
 
   // Text chat order: Groq -> Gemini. Vision/search stay on Gemini because they require Gemini-specific capabilities.
   let provider: "groq" | "gemini" = "gemini";
@@ -518,7 +522,10 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     .filter((source: { title?: string; uri?: string } | undefined): source is { title: string; uri: string } => Boolean(source?.title && source.uri))
     .filter((source: { uri: string }, index: number, all: { uri: string }[]) => all.findIndex((item) => item.uri === source.uri) === index)
     .slice(0, 3);
-  const text = removeEmoji(sources.length ? `${generatedText}\n\nแหล่งข้อมูล:\n${sources.map((source: { title: string; uri: string }) => `- ${source.title}: ${source.uri}`).join("\n")}` : generatedText);
+  // Citations are not part of Vivian's spoken reply, so they do not consume the
+  // 1,000-character dialogue budget.
+  const replyText = limitReplyCharacters(generatedText, replyCharacterLimit);
+  const text = removeEmoji(sources.length ? `${replyText}\n\nแหล่งข้อมูล:\n${sources.map((source: { title: string; uri: string }) => `- ${source.title}: ${source.uri}`).join("\n")}` : replyText);
   if (!text) return NextResponse.json({ error: "Chat provider returned no text" }, { status: 502 });
 
   // A new-chat greeting is ephemeral. It must not change relationship state,
