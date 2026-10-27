@@ -284,7 +284,7 @@ test("chat integrates a single JEV pass; state starts in parallel; main LLM rece
   assert.match(prompt, /Vivian/); assert.match(prompt, /Likes tea/);
   assert.ok(prompt.startsWith(persona.vivianPersonaPrompt));
   assert.match(prompt, /shy, polite, slightly awkward tsundere manner/);
-  assert.match(prompt, /exactly one matching ElevenLabs emotion tag/);
+  assert.match(prompt, /one or more matching ElevenLabs emotion tags/);
   assert.equal(prompt.includes(dialogue.VIVIAN_DIALOGUE_EXAMPLE), false);
   assert.equal(fixture.background.length, 1);
 });

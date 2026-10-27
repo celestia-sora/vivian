@@ -99,14 +99,14 @@ test("v4 character limit is checked after spoken text preparation", async () => 
   assert.match((await tooLong.json()).error, /2000 characters/);
 });
 
-test("actual ElevenLabs payload uses v4 with the configured voice, emotion tag, and Thai language", async () => {
-  const text = "[playful] (กอดอก) ราคา 1,250 บาท ลด 15% ด- ด- เดี๋ยว!";
+test("actual ElevenLabs payload preserves inline v4 emotion tags with the configured voice and Thai language", async () => {
+  const text = "(กอดอก) ราคา [curious] 1,250 บาท ลด 15% [playful] ด- ด- เดี๋ยว!";
   const fixture = handler(async (url, options) => {
     assert.equal(url, "https://api.elevenlabs.io/v1/text-to-dialogue?output_format=mp3_44100_128");
     assert.equal(options.headers["xi-api-key"], "fixture-key");
     const body = JSON.parse(options.body);
     assert.equal(body.model_id, "eleven_v4");
-    assert.deepEqual(body.inputs, [{ text: "[playful] ราคา หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ ด… ด… เดี๋ยว!", voice_id: "fixture-voice" }]);
+    assert.deepEqual(body.inputs, [{ text: "ราคา [curious] หนึ่งพันสองร้อยห้าสิบบาท ลด สิบห้าเปอร์เซ็นต์ [playful] ด… ด… เดี๋ยว!", voice_id: "fixture-voice" }]);
     assert.equal(body.language_code, "th");
     assert.equal(body.apply_text_normalization, "auto");
     return new Response(new Uint8Array([73, 68, 51]));

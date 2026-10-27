@@ -27,7 +27,7 @@ test("ElevenLabs emotion tags are metadata and never enter spoken audio", () => 
   assert.equal(speechText("[let down] วันนี้เหนื่อยนิดหน่อย", "th"), "วันนี้เหนื่อยนิดหน่อย");
   assert.equal(speechEmotionTag("[playful] Hmph… I'm not blushing!"), "[playful]");
   assert.equal(speechEmotionTag("[custom fake] this is not an approved tag"), "");
-  assert.equal(speechText("A [curious] tag in the middle stays ordinary text"), "A curious tag in the middle stays ordinary text");
+  assert.equal(speechText("A [curious] tag in the middle stays ordinary text"), "A tag in the middle stays ordinary text");
 });
 
 test("romaji stammers keep every attempted syllable without spelling the letter B", () => {

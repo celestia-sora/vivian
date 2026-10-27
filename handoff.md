@@ -506,10 +506,16 @@ Follow up only where needed: verify live Google provider configuration and produ
 # Shy tsundere persona and ElevenLabs emotion tags — 2026-10-27
 
 - Replaced the active dialogue-provider persona instructions with the user-requested shy, polite, slightly awkward tsundere Vivian; Thai is the default when no language is selected. Updated the main chat prompt, relationship/mood guidance, story canon, optional examples, model descriptions, TTS cues, README and agent guidance. The legacy persisted mood key remains compatible and now represents flustered/guarded reactions.
-- Spoken replies are instructed to start with one of the user's approved emotion tags. The TTS route extracts a valid leading tag, keeps it inline for ElevenLabs v4 delivery, and strips it from spoken words. Confirmed v4 Text to Dialogue supports inline audio tags in the official API documentation.
+- Spoken replies are instructed to use approved emotion tags as inline delivery metadata, which the TTS route preserves while removing tags from spoken words. Confirmed v4 Text to Dialogue supports inline audio tags in the official API documentation.
 - Verification passed before release: `npm run test:persona`, `npm run test:jev` (60/60), `npm run test:speech` (19/19), `npm run test:companion` (6/6), `npx tsc --noEmit`, `npm run build` and `git diff --check`.
 - Commit `bb47eaa` (`feat: tune Vivian tsundere voice and memory model`) was pushed to `origin/main` and deployed to Production. Vercel deployment `dpl_HofXmugoaRFo3zpqHfY42cxudwVY` reached READY at `https://vivianlabs-l1i7kj8gh-celestial-sora1.vercel.app`; production alias: `https://vivianlabs.vercel.app`.
 - Live authenticated production chat returned a Thai tsundere reply. Production logs confirmed `/api/tts` succeeded with ElevenLabs v4 for Thai output (`elapsedMs: 3457`, `textLength: 140`, `bytes: 196901`, region `sin1`). TTS success was confirmed; browser audio playback was not independently measured in this release check.
+
+# Inline ElevenLabs emotion tags — 2026-10-27
+
+- Corrected Vivian's speech instructions to place one or more approved tags wherever the delivery changes. `/api/tts` now preserves recognized tags in their original positions while stripping them from spoken text; untagged content still receives the existing text cleanup and normalization.
+- ElevenLabs documents placing audio tags inline and strategically before or after the relevant dialogue segment: [Text to Dialogue](https://elevenlabs.io/docs/overview/capabilities/text-to-dialogue), [best practices](https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices).
+- Updated existing speech, TTS payload, persona, and JEV prompt assertions for inline tag behavior.
 
 # Vivian's close-friend lore — 2026-10-27
 
