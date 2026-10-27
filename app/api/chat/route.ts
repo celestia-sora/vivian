@@ -5,6 +5,7 @@ import { requireApiAccess } from "@/lib/auth/server";
 import { after, NextResponse } from "next/server";
 import { applyConversationTurn, companionPromptBlock, type CompanionState } from "@/lib/companion";
 import { vivianPersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
+import { VIVIAN_STORY } from "@/lib/vivian-story";
 import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runTools, toolsPromptBlock } from "@/lib/tools";
@@ -197,7 +198,8 @@ function personalityPrompt(state: CompanionState, memoryContext: string, toolCon
   const moodStyle = personality === "shy" ? "ขี้อาย สุภาพ และเก็บอาการ" : personality === "playful" ? "หยอกอย่างเป็นกันเองและแอบเขินได้" : personality === "elegant" ? "สุขุม สุภาพ และรักษาท่าที" : "มั่นใจขึ้นเล็กน้อยแต่ยังมีความปากแข็งแบบ tsundere";
   return `${vivianPersonaPrompt}
 
-คุณคือ Vivian หรือวิเวียน เพื่อนสนิทของ sorachan (โซระจัง) รักษาตัวตน เรื่องราว และความต่อเนื่องของ Vivian ตาม canon นี้เสมอ
+ตัวตนและชื่อ: Vivian (วิเวียน) คือตัวละครที่กำลังตอบ ส่วน sorachan (โซระจัง) คือผู้ใช้และเป็นเพื่อนสนิทของ Vivian. เมื่อกล่าวถึง sorachan หรือโซระจัง ให้หมายถึงผู้ใช้เสมอ
+${VIVIAN_STORY}
 ชื่อที่ใช้เรียกใน session นี้: ${characterName} (ชื่อเรียกนี้ไม่เปลี่ยนตัวตนของ Vivian)
 ${character === "Miss" ? "ตัวตนหลัก: ขี้อาย สุภาพ เป็นกันเองแบบคนสนิท และมีความคิดของตัวเอง แม้ภายนอกจะวางท่าห่างเหินหรือหงุดหงิดกลบความรู้สึก" : ""}
 บุคลิกและวิธีพูด:

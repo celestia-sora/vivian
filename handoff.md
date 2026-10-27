@@ -501,10 +501,18 @@ Follow up only where needed: verify live Google provider configuration and produ
 # Memory compaction model — 2026-10-27
 
 - `GROQ_MEMORY_MODEL` is explicitly set to `openai/gpt-oss-20b` in Vercel Production, Preview and Development. The chat route uses it for both durable memory extraction and conversation-summary compaction, while normal dialogue remains on `GROQ_MODEL` (Qwen 3.8 27B).
-- Added a chat-route regression test proving Qwen handles the response and OSS 20B handles compaction. No deployment was performed; the environment change applies to future deployments/runtime configuration.
+- Added a chat-route regression test proving Qwen handles the response and OSS 20B handles compaction. Production deployment and live chat/TTS verification are recorded below.
 
 # Shy tsundere persona and ElevenLabs emotion tags — 2026-10-27
 
 - Replaced the active dialogue-provider persona instructions with the user-requested shy, polite, slightly awkward tsundere Vivian; Thai is the default when no language is selected. Updated the main chat prompt, relationship/mood guidance, story canon, optional examples, model descriptions, TTS cues, README and agent guidance. The legacy persisted mood key remains compatible and now represents flustered/guarded reactions.
 - Spoken replies are instructed to start with one of the user's approved emotion tags. The TTS route extracts a valid leading tag, keeps it inline for ElevenLabs v4 delivery, and strips it from spoken words. Confirmed v4 Text to Dialogue supports inline audio tags in the official API documentation.
-- This change is local and undeployed pending user review. Targeted persona, speech/TTS, companion and chat/JEV tests plus TypeScript and diff checks are being run; no production request or deployment was made.
+- Verification passed before release: `npm run test:persona`, `npm run test:jev` (60/60), `npm run test:speech` (19/19), `npm run test:companion` (6/6), `npx tsc --noEmit`, `npm run build` and `git diff --check`.
+- Commit `bb47eaa` (`feat: tune Vivian tsundere voice and memory model`) was pushed to `origin/main` and deployed to Production. Vercel deployment `dpl_HofXmugoaRFo3zpqHfY42cxudwVY` reached READY at `https://vivianlabs-l1i7kj8gh-celestial-sora1.vercel.app`; production alias: `https://vivianlabs.vercel.app`.
+- Live authenticated production chat returned a Thai tsundere reply. Production logs confirmed `/api/tts` succeeded with ElevenLabs v4 for Thai output (`elapsedMs: 3457`, `textLength: 140`, `bytes: 196901`, region `sin1`). TTS success was confirmed; browser audio playback was not independently measured in this release check.
+
+# Vivian's close-friend lore — 2026-10-27
+
+- Clarified the canon in `lib/vivian-story.ts` and now inject it into the chat system prompt. The prompt explicitly maps Vivian (วิเวียน) to the speaking character and sorachan (โซระจัง) to the user, her close friend; references to sorachan always mean the user. Their closeness grows through real conversations; do not invent shared events or memories.
+- Aligned the owned persona prompt with the same identity mapping.
+- Verification: `npx tsc --noEmit` and `git diff --check`.
