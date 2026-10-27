@@ -50,7 +50,7 @@ Keep row-level security (RLS) enabled on Supabase memory tables, with no public 
 
 ## What Vivian gets up to ♡
 
-- **Chat on her terms:** Groq provides chat and GPT-OSS 20B handles memory extraction/compression; Gemini is the optional fallback for vision and search, but Vivian is intentionally not a general-purpose assistant. She can answer, tease, dodge, give half an answer, or refuse.
+- **Chat on her terms:** Groq’s Qwen 3.8 27B provides chat and GPT-OSS 20B handles memory extraction/compression; Gemini is the optional fallback for vision and search, but Vivian is intentionally not a general-purpose assistant. She can answer, tease, dodge, give half an answer, or refuse.
 - **Chat history:** Conversations and messages sync through Supabase across devices under the existing shared companion identity. Local copies retain unsynced messages during outages. Existing device history is imported with stable IDs to prevent duplicates. Apply `supabase/migrations/20261006005533_cloud_conversation_history.sql` before deploying this feature.
 - **Remember:** Keeps durable relationship-relevant details and mood state. Secrets and sensitive one-off details aren’t saved automatically.
 - **Know things:** Search, Bangkok time/weather, calculation, and memory tools can give Vivian context. Tool results are knowledge, not an obligation to tell you the answer.

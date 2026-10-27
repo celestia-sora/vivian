@@ -492,3 +492,8 @@ Follow up only where needed: verify live Google provider configuration and produ
 - The configured production voice is `JTlYtJrcTzPC71hMLOxo`. The Vercel project already had a hidden ElevenLabs API key, so no key value was read or changed.
 - The v4 Text to Dialogue API documents a reliable 2,000-character request limit; the route validates this before sending. Thai language is passed as `language_code: "th"`.
 - Verification: `npm run test:speech`, `npx tsc --noEmit`, and `git diff --check`.
+
+# Main LLM update — 2026-10-27
+
+- Normal text chat now defaults to Groq model `qwen/qwen3.8-27b`; `GROQ_MODEL` can still override it. Memory extraction remains on `GROQ_MEMORY_MODEL`.
+- Production `GROQ_MODEL` is configured through Vercel CLI to use `qwen/qwen3.8-27b`.

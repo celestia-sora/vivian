@@ -381,7 +381,7 @@ test("Groq quota or missing model falls back to Gemini without probing other Gro
     const response = await fixture.post();
     assert.equal(response.status, 200);
     assert.deepEqual(fixture.calls.filter((call) => ["groq", "gemini"].includes(call.kind)).map((call) => call.kind), ["groq", "gemini"]);
-    assert.equal(fixture.calls.find((call) => call.kind === "groq").body.model, "openai/gpt-oss-120b");
+    assert.equal(fixture.calls.find((call) => call.kind === "groq").body.model, "qwen/qwen3.8-27b");
   }
 });
 

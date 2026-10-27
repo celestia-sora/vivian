@@ -25,7 +25,7 @@ type ProviderTurn = {
 export const maxDuration = 60;
 
 const userKey = "default";
-const groqModelName = () => process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
+const groqModelName = () => process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b";
 const groqMemoryModelName = () => process.env.GROQ_MEMORY_MODEL ?? "openai/gpt-oss-20b";
 const groqVisionModel = () => process.env.GROQ_VISION_MODEL ?? "llama-3.2-11b-vision-preview";
 const geminiPrimaryModel = () => {
