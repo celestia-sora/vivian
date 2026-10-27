@@ -24,9 +24,10 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /stammer a syllable, trail off with an ellipsis/);
   assert.match(persona, /Thai style reference/);
   assert.match(route, /ติดอ่าง ลากเสียงหรือเว้นจังหวะ/);
-  assert.match(persona, /one or more matching ElevenLabs emotion tags/);
-  assert.match(persona, /These tags are audio direction metadata and must not be spoken aloud/);
-  assert.match(story, /เพื่อนสนิทขี้อาย สุภาพ และปากแข็งแบบ tsundere/);
+  assert.match(persona, /draw from all ElevenLabs audio-tag categories when useful/);
+  assert.match(persona, /Put an Emotion tag at the beginning of the sentence it guides/);
+  assert.match(persona, /Tags are audio metadata and must not be spoken aloud/);
+  assert.match(story, /เป็นเพื่อนสนิทของ Vivian/);
   assert.match(dialogue, /shy, polite, slightly awkward tsundere companion/);
   assert.match(agents, /character-first shy, polite, slightly awkward tsundere companion/);
 });

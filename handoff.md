@@ -513,7 +513,7 @@ Follow up only where needed: verify live Google provider configuration and produ
 
 # Inline ElevenLabs emotion tags — 2026-10-27
 
-- Corrected Vivian's speech instructions to place one or more approved tags wherever the delivery changes. `/api/tts` now preserves recognized tags in their original positions while stripping them from spoken text; untagged content still receives the existing text cleanup and normalization.
+- Updated Vivian's speech instructions to use contextually fitting tags from every ElevenLabs category (Emotion, Vocalizations, Delivery, Character, and Sound effects), including custom audio cues. Emotion tags go at the start of the sentence they guide; other tags go immediately before their sound or delivery segment. `/api/tts` preserves inline square-bracket audio cues in their original positions while stripping them from spoken text; untagged content still receives the existing text cleanup and normalization.
 - ElevenLabs documents placing audio tags inline and strategically before or after the relevant dialogue segment: [Text to Dialogue](https://elevenlabs.io/docs/overview/capabilities/text-to-dialogue), [best practices](https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices).
 - Updated existing speech, TTS payload, persona, and JEV prompt assertions for inline tag behavior.
 

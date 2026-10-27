@@ -12,8 +12,10 @@ export interface SpeechStyle {
 const stageDirection = /^[\s]*(?:หลบตา|เม้มปาก|กลบยิ้ม|ยิ้ม|หัวเราะ|หน้าแดง|เขิน|ทำหน้า|หันหน้า|กอดอก|ถอนหายใจ|ขยับ|พยักหน้า|ส่ายหน้า|looks? away|blush(?:es|ing)?|smiles?|sighs?|chuckles?|laughs?|pouts?)/iu;
 const repeatedStammer = /(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]{1,12})\s*[-‐‑‒–—…]\s*\1\s*[-‐‑‒–—…]/iu;
 const audibleStammer = /(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]{1,12})…\s*(?:[เแโใไ])?\1[\p{L}\p{M}]/iu;
-const elevenLabsEmotionTag = /\[(?:excited|playful|amazed|powerful|proud|optimistic|startled|mad|aggressive|bitter|critical|repelled|anxious|stressed|scared|threatened|vulnerable|confused|busy|tired|bored|distant|despair|let down|peaceful|content|curious|thoughtful|trusting)\]/iu;
-const elevenLabsEmotionTags = /\[(?:excited|playful|amazed|powerful|proud|optimistic|startled|mad|aggressive|bitter|critical|repelled|anxious|stressed|scared|threatened|vulnerable|confused|busy|tired|bored|distant|despair|let down|peaceful|content|curious|thoughtful|trusting)\]/giu;
+const elevenLabsEmotionTag = /\[(?:weak|angry|bored|menacing|playful|tired|excited|amazed|powerful|proud|optimistic|startled|mad|aggressive|bitter|critical|repelled|anxious|stressed|scared|threatened|vulnerable|confused|busy|distant|despair|let down|peaceful|content|curious|thoughtful|trusting)\]/iu;
+// Eleven v4 accepts the built-in tag catalog and user-written audio cues.
+// Keep square-bracket cues inline, except Markdown link labels and numeric citations.
+const elevenLabsAudioTags = /\[([^\]\n]{1,120})\]/gu;
 
 export function speechEmotionTag(value: string): string {
   return value.match(elevenLabsEmotionTag)?.[0] ?? "";
@@ -110,10 +112,12 @@ export function thaiSpeechNumbers(value: string): string {
     .replace(/\uE000([\uE100-\uF8FF])\uE001/g, (_match, index: string) => identifiers[index.charCodeAt(0) - 0xE100]);
 }
 
-function prepareSpeechText(value: string, language: string, preserveEmotionTags: boolean): string {
+function prepareSpeechText(value: string, language: string, preserveAudioTags: boolean): string {
   const tags: string[] = [];
-  const taggedInput = value.replace(elevenLabsEmotionTags, (tag) => {
-    if (!preserveEmotionTags) return " ";
+  const taggedInput = value.replace(elevenLabsAudioTags, (tag, content: string, offset: number, input: string) => {
+    const following = input.slice(offset + tag.length);
+    if (/^\(https?:\/\//iu.test(following) || /^\s*\d+\s*$/u.test(content)) return tag;
+    if (!preserveAudioTags) return " ";
     const index = tags.push(tag) - 1;
     return `\uE000M${String.fromCharCode(0xE100 + index)}\uE001`;
   });
@@ -137,14 +141,14 @@ function prepareSpeechText(value: string, language: string, preserveEmotionTags:
     .replace(/\s+/g, " ")
     .trim());
   const spoken = language === "th" || (language === "global" && /[ก-๙]/u.test(cleaned)) ? thaiSpeechNumbers(cleaned) : cleaned;
-  return preserveEmotionTags ? spoken.replace(/\uE000M([\uE100-\uF8FF])\uE001/gu, (_match, index: string) => tags[index.charCodeAt(0) - 0xE100] ?? "") : spoken;
+  return preserveAudioTags ? spoken.replace(/\uE000M([\uE100-\uF8FF])\uE001/gu, (_match, index: string) => tags[index.charCodeAt(0) - 0xE100] ?? "") : spoken;
 }
 
 export function speechText(value: string, language = "global"): string {
   return prepareSpeechText(value, language, false);
 }
 
-export function speechTextWithEmotionTags(value: string, language = "global"): string {
+export function speechTextWithAudioTags(value: string, language = "global"): string {
   return prepareSpeechText(value, language, true);
 }
 

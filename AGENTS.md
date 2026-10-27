@@ -18,7 +18,7 @@ Vivian is a character-first shy, polite, slightly awkward tsundere companion, no
 - Every dialogue provider receives the owned tsundere persona prompt from `lib/vivian-persona.ts`. Keep its character-first voice, selected-language behavior, and truthful capability boundaries consistent across providers. Do not require an extra persona model/network call per request.
 - All ordinary questions about herself initially get refusal without disclosing canon facts; this is not a permanent ban on giving her name. Truthful AI/human and capability disclosure is separate. Keep strong refusal commitment and avoid service-style closing offers.
 - Custom instructions are bounded conversation preferences appended after older context, not a replacement identity. Microphone/greeting requests must read the latest preferences rather than retaining recording-start closures.
-- Fallback greetings, TTS delivery, examples, tests, docs, mood mapping, and future response hints must preserve Vivian's shy, polite tsundere identity without forcing catchphrases or denials into every turn. Spoken replies may place one or more matching ElevenLabs emotion tags anywhere near the words they guide; preserve approved tags in the API input and strip them from spoken words.
+- Fallback greetings, TTS delivery, examples, tests, docs, mood mapping, and future response hints must preserve Vivian's shy, polite tsundere identity without forcing catchphrases or denials into every turn. Use the full ElevenLabs audio-tag categories when contextually fitting: Emotion, Vocalizations, Delivery, Character, and Sound effects. Place each Emotion tag at the beginning of the sentence it guides; put other tags immediately before the sound or segment they guide. Preserve tags inline in the API input and strip them from spoken words.
 - Protocol/database values such as `role: "assistant"` and fields such as `assistantMessageId` are technical schema names only. Do not rename them and never treat them as Vivian's identity.
 - Historical persona notes in `handoff.md` may describe retired behavior. The current source files and this invariant supersede those notes.
 
@@ -117,7 +117,7 @@ import { Container } from "pixi-live2d-display";
 #### `/api/tts` — Text-to-Speech
 - **Input:** `{ text: string }`
 - **Output:** audio/mp3 stream (binary)
-- **API:** ElevenLabs Text to Dialogue with model `eleven_v4` and `ELEVENLABS_VOICE_ID`; preserve approved inline emotion tags wherever they occur in the API input so they affect voice delivery, but never speak them as words.
+- **API:** ElevenLabs Text to Dialogue with model `eleven_v4` and `ELEVENLABS_VOICE_ID`; preserve inline audio tags from every category (including custom audio cues) at their positions in the API input so they affect synthesis, but never speak them as words.
 
 ### Environment Variables
 
@@ -345,7 +345,7 @@ This section is the current source of truth for continuing work. Read it before 
 4. `/api/chat` loads durable memory from Supabase, then calls Groq as the primary LLM for normal text chat.
 5. If Groq fails or times out, `/api/chat` falls back to Gemini when configured.
 6. Provider requests have a 25-second timeout; the browser chat request has a 35-second timeout.
-7. The tagged response is sent to `POST /api/tts`; ElevenLabs v4 uses inline emotion tags wherever they occur as delivery metadata.
+7. The tagged response is sent to `POST /api/tts`; ElevenLabs v4 uses inline audio tags across categories as delivery metadata. Emotion tags start their sentence; other tags precede the segment they guide.
 8. The UI waits for audio playback to start, then shows Vivian's response bubble so text and speech are synchronized.
 9. Audio amplitude drives `ParamMouthOpenY`; the reply also drives Live2D expression/motion mapping.
 10. Conversation messages and durable memories are persisted through Supabase when available.
