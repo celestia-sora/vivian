@@ -68,10 +68,10 @@ const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName:
 ];
 // Quick actions shown as a frosted glass row above the orb on double-tap.
 const ORB_DIRECTIONS: Array<{ key: OrbDirection; icon: IconName; label: string }> = [
-  { key: "mic", icon: "mic", label: "ฟังเสียง" },
-  { key: "camera", icon: "video", label: "กล้อง" },
-  { key: "type", icon: "message", label: "พิมพ์" },
-  { key: "settings", icon: "config", label: "ตั้งค่า" },
+  { key: "mic", icon: "mic", label: "mic" },
+  { key: "camera", icon: "video", label: "cam" },
+  { key: "type", icon: "message", label: "chat" },
+  { key: "settings", icon: "config", label: "setting" },
 ];
 const greetings = [
   "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
@@ -1960,9 +1960,17 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           <button className="send-text" type="submit" disabled={sending || !history.ready || (!message.trim() && !attachedImage)} aria-label="ส่งข้อความ"><Icon name="send" size={18}/></button>
         </form>
         <div className="orb-row">
-          {radialOpen && <div className="orb-toolbar" aria-label="ทางลัดของ Vivian">
+          {radialOpen && <div className="orb-toolbar" role="toolbar" aria-label="ทางลัดของ Vivian">
             {ORB_DIRECTIONS.map((item) => (
-              <button key={item.key} type="button" className="orb-direction" onClick={() => runOrbDirection(item.key)}>
+              <button
+                key={item.key}
+                type="button"
+                className="orb-direction"
+                aria-label={item.label}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onClick={() => runOrbDirection(item.key)}
+              >
                 <span
                   className={`circle-control ${
                     item.key === "mic" && recording
@@ -1988,7 +1996,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
             onPointerUp={onOrbPointerEnd}
             onPointerCancel={onOrbPointerEnd}
             onContextMenu={(event) => event.preventDefault()}
-            aria-label="กดค้างเพื่อพูดกับ Vivian แตะสองครั้งเพื่อเปิดทางลัด (ฟังเสียง กล้อง พิมพ์ ตั้งค่า)"
+            aria-label="กดค้างเพื่อพูดกับ Vivian แตะสองครั้งเพื่อเปิดทางลัด (mic cam chat setting)"
             aria-expanded={radialOpen}
           >
             <SiriOrb size="62px" state={orbState} amplitude={recording ? micAmplitude : 0} />
