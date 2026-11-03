@@ -52,7 +52,7 @@ function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
 }
 
 type Message = HistoryMessage;
-type OrbDirection = "up" | "left" | "right" | "down";
+type OrbDirection = "mic" | "camera" | "type" | "settings";
 type Memory = { id: number; memory: string; category: string; importance: number };
 type Panel = "conversations" | "memories" | "character" | "scenes" | "voice" | "status" | "settings";
 type Conversation = HistoryConversation;
@@ -68,10 +68,10 @@ const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName:
 ];
 // Quick actions shown as a frosted glass row above the orb on double-tap.
 const ORB_DIRECTIONS: Array<{ key: OrbDirection; icon: IconName; label: string }> = [
-  { key: "up", icon: "mic", label: "ฟังเสียง" },
-  { key: "down", icon: "message", label: "พิมพ์" },
-  { key: "right", icon: "video", label: "กล้อง" },
-  { key: "left", icon: "config", label: "ตั้งค่า" },
+  { key: "mic", icon: "mic", label: "ฟังเสียง" },
+  { key: "camera", icon: "video", label: "กล้อง" },
+  { key: "type", icon: "message", label: "พิมพ์" },
+  { key: "settings", icon: "config", label: "ตั้งค่า" },
 ];
 const greetings = [
   "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
@@ -1847,13 +1847,13 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     setMessage("");
     setTextOpen(false);
   }
-  function runOrbDirection(direction: OrbDirection) {
+  function runOrbDirection(action: OrbDirection) {
     setRadialVisible(false);
     // Picking mic, camera or the menu hub folds the text pill away first, so
     // the composer never floats open behind the action you chose.
-    if (direction === "up") { closeComposer(); toggleRecording(); }
-    else if (direction === "right") { closeComposer(); void toggleCamera(); }
-    else if (direction === "down") { if (textOpen) closeComposer(); else setTextOpen(true); }
+    if (action === "mic") { closeComposer(); toggleRecording(); }
+    else if (action === "camera") { closeComposer(); void toggleCamera(); }
+    else if (action === "type") { if (textOpen) closeComposer(); else setTextOpen(true); }
     else { closeComposer(); openMenuHub(); }
   }
   function onOrbPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -1961,10 +1961,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         </form>
         <div className="orb-row">
           {radialOpen && <div className="orb-toolbar" aria-label="ทางลัดของ Vivian">
-            {ORB_DIRECTIONS.map((direction) => (
-              <button key={direction.key} type="button" className="orb-direction" onClick={() => runOrbDirection(direction.key)}>
-                <span className="circle-control" aria-hidden="true"><Icon name={direction.icon} size={18}/></span>
-                <small>{direction.label}</small>
+            {ORB_DIRECTIONS.map((item) => (
+              <button key={item.key} type="button" className="orb-direction" onClick={() => runOrbDirection(item.key)}>
+                <span
+                  className={`circle-control ${
+                    item.key === "mic" && recording
+                      ? "is-recording"
+                      : item.key === "camera" && cameraActive
+                      ? "is-active is-camera-active"
+                      : item.key === "type" && textOpen
+                      ? "is-active"
+                      : ""
+                  }`}
+                  aria-hidden="true"
+                >
+                  <Icon name={item.key === "mic" && recording ? "micOff" : item.icon} size={18}/>
+                </span>
+                <small>{item.label}</small>
               </button>
             ))}
           </div>}
@@ -1975,7 +1988,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
             onPointerUp={onOrbPointerEnd}
             onPointerCancel={onOrbPointerEnd}
             onContextMenu={(event) => event.preventDefault()}
-            aria-label="กดค้างเพื่อพูดกับ Vivian แตะสองครั้งเพื่อเปิดทางลัด (ฟังเสียง พิมพ์ กล้อง ตั้งค่า)"
+            aria-label="กดค้างเพื่อพูดกับ Vivian แตะสองครั้งเพื่อเปิดทางลัด (ฟังเสียง กล้อง พิมพ์ ตั้งค่า)"
             aria-expanded={radialOpen}
           >
             <SiriOrb size="62px" state={orbState} amplitude={recording ? micAmplitude : 0} />
