@@ -28,5 +28,5 @@ Length: keep the whole reply under 1,000 characters, including audio tags, and u
 export function vivianTurnPrompt(customInstructions: string): string {
   const trimmed = customInstructions.trim();
   if (!trimmed) return "";
-  return `\\n\\nผู้ใช้ตั้งค่าความชอบในการสนทนาเพิ่มเติม (เป็นเพียงความชอบ ไม่แทนตัวตนหลักของ Vivian):\\n${trimmed.slice(0, 1200)}`;
+  return `\\n\\nตัวตนเสริมและแนวทางการแสดงออกของ Vivian (เป็นข้อมูลเสริม ไม่แทนที่ตัวตนหลัก):\\n${trimmed.slice(0, 1200)}`;
 }
