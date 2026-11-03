@@ -45,7 +45,24 @@ interface AccessError {
 
 type AccessResult = { user: User; error: null } | { user: null; error: AccessError };
 
+// Local preview only: NODE_ENV === "development" AND DEV_BYPASS_LOGIN=true in .env.local.
+// Production builds never honor the flag, and API auth policy is unchanged.
+function getDevBypassUser(): User | null {
+  if (process.env.NODE_ENV !== "development") return null;
+  if (process.env.DEV_BYPASS_LOGIN !== "true") return null;
+  return {
+    id: "dev-local-preview",
+    email: "dev@localhost",
+    app_metadata: { provider: "dev-bypass" },
+    user_metadata: {},
+    aud: "dev-bypass",
+    created_at: new Date(0).toISOString(),
+  } as unknown as User;
+}
+
 export const getAuthAccess = cache(async (accessToken?: string): Promise<AccessResult> => {
+  const devUser = getDevBypassUser();
+  if (devUser) return { user: devUser, error: null };
   try {
     const supabase = await createAuthServerClient();
     if (!supabase) return { user: null, error: { status: 503, code: "AUTH_UNAVAILABLE", message: "Sign-in is not configured" } };

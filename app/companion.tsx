@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { PointerEvent as ReactPointerEvent } from "react";
 import { captureModelRestState, restoreModelRestState, type ModelRestState, type CubismRestModel } from "@/lib/model-rest-state";
 import { attachModelWind, type WindInternalModel } from "@/lib/model-wind";
 import { waitForCubismCore } from "@/lib/model-runtime";
@@ -22,6 +23,9 @@ import { SceneBackground } from "@/app/components/scene-background";
 import { StorageStatusPanel } from "@/app/components/storage-status";
 import { createVoiceActivity, updateVoiceActivity, type VoiceActivityState } from "@/lib/voice-activity";
 import type { SceneDecision } from "@/lib/scenes";
+import { useMotionValue } from "motion/react";
+import SiriOrb from "@/components/ui/smoothui/siri-orb";
+import type { AIState } from "@/components/ui/smoothui/ai-core";
 
 async function availableModelPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal?: AbortSignal): Promise<ModelPackage | undefined> {
   return hydrateModelPackage(pack, {
@@ -47,6 +51,7 @@ function Icon({ name, size = 24 }: { name: IconName; size?: number }) {
 }
 
 type Message = HistoryMessage;
+type OrbDirection = "up" | "left" | "right" | "down";
 type Memory = { id: number; memory: string; category: string; importance: number };
 type Panel = "conversations" | "memories" | "character" | "scenes" | "voice" | "status" | "settings";
 type Conversation = HistoryConversation;
@@ -59,6 +64,13 @@ const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName:
   { code: "ja", label: "Japanese", nativeName: "JP" },
   { code: "ko", label: "Korean", nativeName: "KR" },
   { code: "zh", label: "Chinese", nativeName: "CN" },
+];
+// Quick actions shown as a frosted glass row above the orb on double-tap.
+const ORB_DIRECTIONS: Array<{ key: OrbDirection; icon: IconName; label: string }> = [
+  { key: "up", icon: "mic", label: "ฟังเสียง" },
+  { key: "down", icon: "message", label: "พิมพ์" },
+  { key: "right", icon: "video", label: "กล้อง" },
+  { key: "left", icon: "config", label: "ตั้งค่า" },
 ];
 const greetings = [
   "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
@@ -170,6 +182,17 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [recording, setRecording] = useState(false);
   const [muted, setMuted] = useState(false);
   const [sending, setSending] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [textOpen, setTextOpen] = useState(false);
+  const [radialOpen, setRadialOpen] = useState(false);
+  const radialOpenRef = useRef(false);
+  const orbPointerRef = useRef<{ x: number; y: number } | null>(null);
+  // Push-to-talk: hold ≈220ms starts recording; release stops and transcribes.
+  const orbHoldTimerRef = useRef<number | null>(null);
+  const orbPttActiveRef = useRef(false);
+  const orbLastTapRef = useRef(0);
+  // Live mic loudness lives in a MotionValue so 60fps updates never re-render.
+  const micAmplitude = useMotionValue(0);
   const [sttPreview, setSttPreview] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
@@ -917,6 +940,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       audio.load();
     }
     speakingRef.current = false;
+    setSpeaking(false);
     stopLipSync();
     resetReaction();
   }
@@ -1046,6 +1070,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     const abort = new AbortController();
     ttsAbortRef.current = abort;
     speakingRef.current = true;
+    setSpeaking(true);
     const timeout = window.setTimeout(() => abort.abort(), TTS_TIMEOUT_MS);
     let objectUrl: string | null = null;
     const ttsTiming = startTiming("tts_request_to_audio_start");
@@ -1082,12 +1107,12 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       audio.defaultMuted = false;
       audio.volume = 1;
       audio.onended = () => {
-        if (speakId === speakIdRef.current) speakingRef.current = false;
+        if (speakId === speakIdRef.current) { speakingRef.current = false; setSpeaking(false); }
         stopLipSync();
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
       audio.onerror = () => {
-        if (speakId === speakIdRef.current) speakingRef.current = false;
+        if (speakId === speakIdRef.current) { speakingRef.current = false; setSpeaking(false); }
         stopLipSync();
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
@@ -1107,6 +1132,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     } catch (error) {
       if (speakId === speakIdRef.current) {
         speakingRef.current = false;
+        setSpeaking(false);
         if ((error as { name?: string }).name !== "AbortError") {
           resetReaction();
           console.error("TTS unavailable", error);
@@ -1324,7 +1350,13 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      if (generation !== memoryGenerationRef.current) { stream.getTracks().forEach((track) => track.stop()); return; }
+      // A push-to-talk hold can be released while Safari's permission prompt is
+      // still pending. Do not leave a late-resolving stream recording in the
+      // background after the user has already released the orb.
+      if (generation !== memoryGenerationRef.current || !micEnabledRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const chunks: BlobPart[] = [];
       const preferredMimeTypes = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"];
       const mimeType = preferredMimeTypes.find((type) => MediaRecorder.isTypeSupported(type));
@@ -1413,17 +1445,21 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           let sum = 0;
           for (const sample of samples) { const delta = sample - 128; sum += delta * delta; }
           const rms = Math.sqrt(sum / samples.length) / 128;
+          micAmplitude.set(Math.min(1, rms * 7));
           if (updateVoiceActivity(activity, rms, Date.now())) { stopRecording(); return; }
           voiceMonitorRef.current = requestAnimationFrame(monitor);
         };
         voiceMonitorRef.current = requestAnimationFrame(monitor);
       }
     } catch {
+      micAmplitude.set(0);
+      micEnabledRef.current = false;
       resetReaction();
       setMessages((current) => [...current, historyMessage("vivian", "ยังไม่ได้รับสิทธิ์ใช้ไมโครโฟนค่ะ")]);
     }
   }
   function stopRecording() {
+    micAmplitude.set(0);
     const recorder = recorderRef.current;
     if (!recorder || recorder.state === "inactive") return;
     recorder.stop();
@@ -1722,16 +1758,99 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     { key: "status", label: "Status", icon: "status" },
     { key: "settings", label: "Settings", icon: "config" },
   ];
+  // One shared state vocabulary for the orb: it follows radio/TTS/mic reality.
+  const orbState: AIState =
+    errorNotice
+      ? "error"
+      : sending
+        ? "thinking"
+        : speaking
+          ? "streaming"
+          : recording
+            ? "listening"
+            : "idle";
+  function toggleTextInput() {
+    setTextOpen((open) => {
+      if (!open && recordingRef.current) toggleRecording();
+      return !open;
+    });
+  }
+  // ---- Orb interaction: double tap = quick-actions row, press & hold = talk (STT). ----
+  function setRadialVisible(open: boolean) {
+    radialOpenRef.current = open;
+    setRadialOpen(open);
+  }
+  function closeOrbRadial() {
+    setRadialVisible(false);
+  }
+  function closeComposer() {
+    // Closing the composer resets its draft: text and attachment clear.
+    setAttachedImage(null);
+    setMessage("");
+    setTextOpen(false);
+  }
+  function runOrbDirection(direction: OrbDirection) {
+    setRadialVisible(false);
+    // Picking mic, camera or settings folds the text pill away first, so the
+    // composer never floats open behind the action you chose.
+    if (direction === "up") { closeComposer(); toggleRecording(); }
+    else if (direction === "right") { closeComposer(); void toggleCamera(); }
+    else if (direction === "down") { if (textOpen) closeComposer(); else setTextOpen(true); }
+    else { closeComposer(); openPanel("settings"); }
+  }
+  function onOrbPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    void event.currentTarget.setPointerCapture(event.pointerId);
+    orbPointerRef.current = { x: event.clientX, y: event.clientY };
+    if (radialOpenRef.current) return; // toolbar is open: taps select buttons, no PTT
+    // Arm push-to-talk: a short hold starts recording, a quick tap does not.
+    if (orbHoldTimerRef.current !== null) window.clearTimeout(orbHoldTimerRef.current);
+    orbHoldTimerRef.current = window.setTimeout(() => {
+      orbHoldTimerRef.current = null;
+      orbPttActiveRef.current = true;
+      if (!micEnabledRef.current) {
+        micEnabledRef.current = true;
+        void startRecording();
+      }
+    }, 220);
+  }
+  function onOrbPointerEnd(event: ReactPointerEvent<HTMLButtonElement>) {
+    void event.currentTarget.releasePointerCapture?.(event.pointerId);
+    orbPointerRef.current = null;
+    if (orbHoldTimerRef.current !== null) { window.clearTimeout(orbHoldTimerRef.current); orbHoldTimerRef.current = null; }
+    if (orbPttActiveRef.current) {
+      orbPttActiveRef.current = false;
+      if (micEnabledRef.current) {
+        micEnabledRef.current = false;
+        stopRecording();
+      }
+      orbLastTapRef.current = 0;
+      return;
+    }
+    if (radialOpenRef.current) {
+      // The quick-action row is selected by tapping its buttons directly.
+      closeOrbRadial();
+      orbLastTapRef.current = 0;
+      return;
+    }
+    // A quick tap: the second tap inside 320ms opens the quick-action row.
+    const now = Date.now();
+    if (orbLastTapRef.current && now - orbLastTapRef.current <= 320) {
+      orbLastTapRef.current = 0;
+      setRadialVisible(true);
+    } else {
+      orbLastTapRef.current = now;
+    }
+  }
 
   return <main className="companion-shell">
     <section className={`companion-stage ${MODEL_CONFIG[selectedModel].background} ${!sending && !recording ? "is-idle" : ""}`} aria-label="Vivian companion">
       <SceneBackground source={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.imageUrl ?? BACKGROUNDS[selectedPreset]} preview={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.thumbnailUrl} timing={sceneLibrary.selectionTiming} />
       <canvas className="live2d-canvas" ref={canvasRef} />
-      <button className="floating-menu-trigger" type="button" onClick={() => { setPanel(null); setSidebarOpen((value) => !value); }} aria-label={sidebarOpen ? "Close Vivian menu" : "Open Vivian menu"} aria-expanded={sidebarOpen}><Icon name={sidebarOpen ? "close" : "config"} size={21}/></button>
-      <header className="companion-brand"><span className="brand-mark" aria-hidden="true"/><span>Vivian</span></header>
-      <div className="scene-quick-controls">
-        <button type="button" onClick={() => selectPresetScene(selectedPreset === "day" ? "night" : "day")} aria-label="Toggle day and night scene" title="Day / Night"><Icon name={selectedPreset === "day" ? "moon" : "sun"} size={20}/></button>
-      </div>
+      <header className="companion-brand">
+        <button className="brand-menu" type="button" onClick={() => { setPanel(null); setSidebarOpen(true); }} aria-label="เปิดเมนู Vivian (แชต ความจำ ท่าทาง ฉาก เสียง สถานะ)">
+          <span className="brand-mark" aria-hidden="true"/><span>Vivian</span>
+        </button>
+      </header>
       <div className="camera-pip" style={{ display: cameraActive ? "flex" : "none" }} aria-label="Live Camera Vision">
         <div className="camera-pip-header">
           <div className="live-badge">
@@ -1775,14 +1894,37 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           <button type="button" onClick={() => setAttachedImage(null)} aria-label="ลบรูปภาพ">×</button>
         </div>
       )}
-      <form className="companion-input" onSubmit={(event) => { event.preventDefault(); void sendMessage(); }}>
-        <button className={`circle-control ${recording ? "is-recording" : "is-muted"}`} type="button" onClick={toggleRecording} aria-pressed={recording} aria-label={recording ? "Mute microphone" : "Microphone muted, click to unmute"}><Icon name={recording ? "mic" : "micOff"} size={18}/></button>
-        <button className={`circle-control ${cameraActive ? "is-active is-camera-active" : ""}`} type="button" onClick={toggleCamera} aria-pressed={cameraActive} aria-label={cameraActive ? "ปิดกล้อง Live" : "เปิดกล้อง Live"}><Icon name="video" size={18}/></button>
-        <button className={`circle-control ${attachedImage ? "is-active" : ""}`} type="button" onClick={() => fileInputRef.current?.click()} aria-label="แนบรูปภาพ"><Icon name="clip" size={18}/></button>
+      {textOpen && <button className="composer-scrim" type="button" tabIndex={-1} aria-label="ปิดช่องพิมพ์" onClick={closeComposer} />}
+      <div className="orb-dock">
+        <form className={`composer-pill ${textOpen ? "is-open" : ""}`} onSubmit={(event) => { event.preventDefault(); void sendMessage(); }} inert={!textOpen}>
+          <button className="circle-control" type="button" onClick={() => fileInputRef.current?.click()} aria-label="แนบรูปภาพ"><Icon name="clip" size={18}/></button>
+          <input value={message} onChange={(event) => setMessage(event.target.value)} autoFocus={textOpen} placeholder={recording ? "กำลังฟัง... กดไมค์เพื่อ Mute" : cameraActive ? "กล้อง Live กำลังทำงาน... พิมพ์คุยได้" : "Talk to Vivian"} aria-label="ข้อความถึง Vivian" />
+          <button className="send-text" type="submit" disabled={sending || !history.ready || (!message.trim() && !attachedImage)} aria-label="ส่งข้อความ"><Icon name="send" size={18}/></button>
+        </form>
+        <div className="orb-row">
+          {radialOpen && <div className="orb-toolbar" aria-label="ทางลัดของ Vivian">
+            {ORB_DIRECTIONS.map((direction) => (
+              <button key={direction.key} type="button" className="orb-direction" onClick={() => runOrbDirection(direction.key)}>
+                <span className="circle-control" aria-hidden="true"><Icon name={direction.icon} size={18}/></span>
+                <small>{direction.label}</small>
+              </button>
+            ))}
+          </div>}
+          <button
+            className="orb-button"
+            type="button"
+            onPointerDown={onOrbPointerDown}
+            onPointerUp={onOrbPointerEnd}
+            onPointerCancel={onOrbPointerEnd}
+            onContextMenu={(event) => event.preventDefault()}
+            aria-label="กดค้างเพื่อพูดกับ Vivian แตะสองครั้งเพื่อเปิดทางลัด (ฟังเสียง พิมพ์ กล้อง ตั้งค่า)"
+            aria-expanded={radialOpen}
+          >
+            <SiriOrb size="62px" state={orbState} amplitude={recording ? micAmplitude : 0} />
+          </button>
+        </div>
         <input ref={fileInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={handleImageUpload} tabIndex={-1} />
-        <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={recording ? "กำลังฟัง... กดไมค์เพื่อ Mute" : cameraActive ? "กล้อง Live กำลังทำงาน... พิมพ์คุยได้" : "Talk to Vivian"} aria-label="ข้อความถึง Vivian" />
-        <button className="send-text" type="submit" disabled={sending || !history.ready || (!message.trim() && !attachedImage)} aria-label="ส่งข้อความ"><Icon name="send" size={18}/></button>
-      </form>
+      </div>
     </section>
     <div className={`floating-overlay ${sidebarOpen ? "is-visible" : ""}`} aria-hidden={!sidebarOpen}>
       <button className="floating-scrim" type="button" tabIndex={sidebarOpen ? 0 : -1} onClick={() => { setPanel(null); setSidebarOpen(false); }} aria-label="Close sidebar" />
