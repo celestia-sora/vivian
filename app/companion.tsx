@@ -25,6 +25,7 @@ import { createVoiceActivity, updateVoiceActivity, type VoiceActivityState } fro
 import type { SceneDecision } from "@/lib/scenes";
 import { useMotionValue } from "motion/react";
 import SiriOrb from "@/components/ui/smoothui/siri-orb";
+import AnimatedFileUpload from "@/components/ui/smoothui/animated-file-upload";
 import type { AIState } from "@/components/ui/smoothui/ai-core";
 
 async function availableModelPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal?: AbortSignal): Promise<ModelPackage | undefined> {
@@ -209,6 +210,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [modelsReady, setModelsReady] = useState(false);
   const [modelImporting, setModelImporting] = useState(false);
+  const [modelUploadKey, setModelUploadKey] = useState(0);
   const [modelStatus, setModelStatus] = useState<"empty" | "loading" | "ready" | "error">("empty");
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const modelCloudRequestRef = useRef<Promise<CloudLibrary | null> | null>(null);
@@ -223,7 +225,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [textureSummary, setTextureSummary] = useState<string | null>(null);
   const [activeExpression, setActiveExpression] = useState<string | null>(null);
   const [activeMotion, setActiveMotion] = useState<string | null>(null);
-  const modelZipRef = useRef<HTMLInputElement>(null);
   const modelFolderRef = useRef<HTMLInputElement>(null);
   const activePackage = modelPackages.find((pack) => pack.models.some((model) => model.id === activeModelId));
   const activeModel = activePackage?.models.find((model) => model.id === activeModelId);
@@ -232,7 +233,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [customInstructions, setCustomInstructions] = useState("");
   const customInstructionsRef = useRef("");
   customInstructionsRef.current = customInstructions;
-  const [jevConfigured, setJevConfigured] = useState<boolean | null | undefined>(undefined);
   const [editingMemoryId, setEditingMemoryId] = useState<number | null>(null);
   const [memoryDraft, setMemoryDraft] = useState("");
   const [backgroundMode, setBackgroundMode] = useState<keyof typeof BACKGROUNDS>("day");
@@ -271,16 +271,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     if (!sidebarOpen || panel !== "conversations") return;
     const refresh = window.setInterval(() => { void loadMemory(); }, 3000);
     return () => window.clearInterval(refresh);
-  }, [sidebarOpen, panel]);
-
-  useEffect(() => {
-    if (!sidebarOpen || panel !== "settings") return;
-    const controller = new AbortController();
-    authFetch("/api/jev/status", { cache: "no-store", signal: controller.signal })
-      .then((response) => response.ok ? response.json() : null)
-      .then((data: { configured?: boolean } | null) => { if (!controller.signal.aborted) setJevConfigured(data?.configured ?? null); })
-      .catch(() => { if (!controller.signal.aborted) setJevConfigured(null); });
-    return () => controller.abort();
   }, [sidebarOpen, panel]);
 
   useEffect(() => {
@@ -1731,24 +1721,27 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     setSidebarOpen(true);
     if (next === "conversations") void history.refresh();
   }
-  function backToNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
+  function openMenuHub() {
     panelRef.current = null;
     try { window.sessionStorage.removeItem("vivian-open-panel"); } catch { /* Ignore unavailable storage. */ }
     setPanel(null);
-    // The phone has no persistent category rail: Back returns to Vivian and
-    // dismisses the full-screen menu. Desktop keeps the rail as its prior view.
-    const keepDesktopRail = !window.matchMedia("(max-width: 760px)").matches;
-    sidebarOpenRef.current = keepDesktopRail;
-    setSidebarOpen(keepDesktopRail);
+    sidebarOpenRef.current = true;
+    setSidebarOpen(true);
   }
-  function closeNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
+  function backToNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
+    openMenuHub();
+  }
+  function closeMenu() {
     panelRef.current = null;
     sidebarOpenRef.current = false;
     try { window.sessionStorage.removeItem("vivian-open-panel"); } catch { /* Ignore unavailable storage. */ }
     setPanel(null);
     setSidebarOpen(false);
+  }
+  function closeNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    closeMenu();
   }
   useEffect(() => { panelRef.current = panel; sidebarOpenRef.current = sidebarOpen; }, [panel, sidebarOpen]);
   useEffect(() => {
@@ -1787,8 +1780,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     setActiveConversationId(conversation.id);
     window.localStorage.setItem("vivian-active-conversation", conversation.id);
     setMessages(conversation.messages);
-    setPanel(null);
-    setSidebarOpen(false);
+    closeMenu();
   }
   function newConversation() {
     if (sending || resettingRef.current || !history.ready) return;
@@ -1802,8 +1794,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     window.localStorage.setItem("vivian-active-conversation", id);
     setMessages([{ from: "vivian", text: GREETING_PENDING }]);
     setGreetingTrigger((value) => value + 1);
-    setPanel(null);
-    setSidebarOpen(false);
+    closeMenu();
   }
   const navigation: Array<{ key: Panel; label: string; icon: IconName }> = [
     { key: "conversations", label: "Conversations", icon: "message" },
@@ -1858,12 +1849,12 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   }
   function runOrbDirection(direction: OrbDirection) {
     setRadialVisible(false);
-    // Picking mic, camera or settings folds the text pill away first, so the
-    // composer never floats open behind the action you chose.
+    // Picking mic, camera or the menu hub folds the text pill away first, so
+    // the composer never floats open behind the action you chose.
     if (direction === "up") { closeComposer(); toggleRecording(); }
     else if (direction === "right") { closeComposer(); void toggleCamera(); }
     else if (direction === "down") { if (textOpen) closeComposer(); else setTextOpen(true); }
-    else { closeComposer(); openPanel("settings"); }
+    else { closeComposer(); openMenuHub(); }
   }
   function onOrbPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
     void event.currentTarget.setPointerCapture(event.pointerId);
@@ -1914,7 +1905,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       <SceneBackground source={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.imageUrl ?? BACKGROUNDS[selectedPreset]} preview={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.thumbnailUrl} timing={sceneLibrary.selectionTiming} />
       <canvas className="live2d-canvas" ref={canvasRef} />
       <header className="companion-brand">
-        <button className="brand-menu" type="button" onClick={() => { setPanel(null); setSidebarOpen(true); }} aria-label="เปิดเมนู Vivian (แชต ความจำ ท่าทาง ฉาก เสียง สถานะ)">
+        <button className="brand-menu" type="button" onClick={openMenuHub} aria-label="เปิดเมนู Vivian (แชต ความจำ ท่าทาง ฉาก เสียง สถานะ)">
           <span className="brand-mark" aria-hidden="true"/><span>Vivian</span>
         </button>
       </header>
@@ -1994,16 +1985,15 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       </div>
     </section>
     <div className={`floating-overlay ${sidebarOpen ? "is-visible" : ""}`} aria-hidden={!sidebarOpen}>
-      <button className="floating-scrim" type="button" tabIndex={sidebarOpen ? 0 : -1} onClick={() => { setPanel(null); setSidebarOpen(false); }} aria-label="Close sidebar" />
-      <div className={`floating-workspace ${panel ? "menu-window" : ""}`}>
-        <nav className="floating-sidebar" aria-label="Vivian navigation" inert={!sidebarOpen}>
-          <div className="floating-sidebar-head"><span className="brand-mark" aria-hidden="true"/> Vivian <button type="button" onClick={() => { setPanel(null); setSidebarOpen(false); }} aria-label="Close sidebar"><Icon name="close" size={18}/></button></div>
-          <button type="button" className="floating-new-chat" onClick={newConversation}><Icon name="plus" size={17}/> New Chat</button>
-          {navigation.map((item) => <button key={item.key} type="button" className={`floating-nav-item ${panel === item.key ? "is-selected" : ""}`} onClick={() => openPanel(item.key)}><Icon name={item.icon} size={18}/>{item.label}</button>)}
-        </nav>
-        {panel && <section className={`floating-panel ${panel === "settings" ? "settings-panel" : ""}`} role="dialog" aria-modal="true" aria-label={navigation.find((item) => item.key === panel)?.label}>
-          <div className="floating-panel-head"><button className="settings-back" type="button" onClick={backToNavigation} aria-label="Back to categories"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg></button><div><small>VIVIAN / {panel.toUpperCase()}</small><h2>{navigation.find((item) => item.key === panel)?.label}</h2></div><button type="button" onClick={closeNavigation} aria-label="Close menu"><Icon name="close" size={18}/></button></div>
+      <button className="floating-scrim" type="button" tabIndex={sidebarOpen ? 0 : -1} onClick={closeMenu} aria-label="Close sidebar" />
+      <div className="floating-workspace menu-window">
+        <section className="floating-panel" role="dialog" aria-modal="true" aria-label={panel ? navigation.find((item) => item.key === panel)?.label : "Vivian menu"}>
+          <div className="floating-panel-head">{panel && <button className="settings-back" type="button" onClick={backToNavigation} aria-label="Back to menu"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>}<div><small>{panel ? `VIVIAN / ${panel.toUpperCase()}` : "VIVIAN / MENU"}</small><h2>{panel ? navigation.find((item) => item.key === panel)?.label : "Menu"}</h2></div><button type="button" onClick={closeNavigation} aria-label="Close menu"><Icon name="close" size={18}/></button></div>
           <div className="floating-panel-body">
+            {!panel && <>
+              <button type="button" className="floating-new-chat" onClick={newConversation}><Icon name="plus" size={17}/> New Chat</button>
+              <div className="floating-menu-list">{navigation.map((item) => <button key={item.key} type="button" className="floating-nav-item" onClick={() => openPanel(item.key)}><Icon name={item.icon} size={18}/><span>{item.label}</span><span className="nav-chevron"><Icon name="chevron" size={16}/></span></button>)}</div>
+            </>}
             {panel === "conversations" && <>
               <label className="floating-search"><Icon name="search" size={17}/><input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Search conversations" /></label>
               <div className="conversation-list">{conversations.filter((item) => item.title.toLowerCase().includes(conversationSearch.toLowerCase()) || item.messages.some((entry) => entry.text.toLowerCase().includes(conversationSearch.toLowerCase()))).sort((a, b) => b.updatedAt - a.updatedAt).map((conversation) => <button key={conversation.id} type="button" className={conversation.id === activeConversationId ? "is-selected" : ""} onClick={() => selectConversation(conversation)}><span className="conversation-avatar">V</span><span><strong>{conversation.title}</strong><small>{conversation.messages.at(-1)?.text ?? "Start chatting with Vivian"}</small></span><time>{new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(conversation.updatedAt)}</time></button>)}</div>
@@ -2027,11 +2017,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                 {activeModel && <label className="model-select-label">Texture quality<select value={textureQuality} onChange={(event) => { setModelNotice(null); setTextureQuality(event.target.value as "auto" | "original"); }}><option value="auto">Auto · fit this device</option><option value="original">Original textures</option></select></label>}
                 {activeModel && <button type="button" className="floating-option" disabled={modelStatus === "loading" || graphicsLost || modelImporting} onClick={() => { void (async () => { setModelNotice(null); if (modelPaused) { setTextureQuality("auto"); await chooseModel(activeModel.id); } setModelPaused(false); setModelReload((value) => value + 1); })(); }}>Reload model</button>}
                 {textureSummary && <p className="floating-note">{textureSummary}. Original files stay unchanged.</p>}
+                <AnimatedFileUpload
+                  key={`model-upload-${modelUploadKey}`}
+                  accept=".zip"
+                  className="vivian-upload"
+                  disabled={modelImporting || !modelsReady}
+                  maxSize={512 * 1024 * 1024}
+                  multiple={false}
+                  onFilesSelected={(files) => {
+                    const zip = files[0];
+                    if (!zip) return;
+                    void importModels([zip]).finally(() => setModelUploadKey((value) => value + 1));
+                  }}
+                />
                 <div className="model-import-actions">
-                  <button className="floating-option model-import-primary" type="button" disabled={modelImporting || !modelsReady} onClick={() => modelZipRef.current?.click()}><Icon name="plus" size={16} />{modelImporting ? "Importing…" : "Import model ZIP"}</button>
-                  <button className="floating-option" type="button" disabled={modelImporting || !modelsReady} onClick={() => modelFolderRef.current?.click()}>Choose folder</button>
+                  <button className="floating-option" type="button" disabled={modelImporting || !modelsReady} onClick={() => modelFolderRef.current?.click()}>Choose an unpacked folder instead</button>
                 </div>
-                <input ref={modelZipRef} hidden type="file" accept=".zip" onChange={(event) => { const input = event.currentTarget; const files = Array.from(input.files ?? []); void importModels(files).finally(() => { input.value = ""; }); }} />
+                {modelImporting && <p role="status" className="floating-note">Importing model…</p>}
                 <input ref={modelFolderRef} hidden type="file" multiple {...{ webkitdirectory: "", directory: "" }} onChange={(event) => { const input = event.currentTarget; const files = Array.from(input.files ?? []); void importModels(files).finally(() => { input.value = ""; }); }} />
                 <p className="floating-note">{cloudLibrary ? "New imports are saved privately to cloud and cached on this device." : "Models are saved on this device while cloud sync is unavailable."} Include the .model3.json, .moc3, textures and animation files. Up to 512 MiB per package.</p>
                 {cloudLibrary && <p className="floating-note">Models + scenes: {((cloudLibrary.usage.live2d.used + cloudLibrary.usage.other.used) / 1e9).toFixed(2)} / 8 GB shared. 2 GB stays unused as a safety buffer. Pending uploads count toward the budget.</p>}
@@ -2054,10 +2056,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
             {panel === "scenes" && <><SceneManager library={sceneLibrary}/><p className="floating-note">Default backgrounds</p><div className="scene-grid">{(Object.keys(BACKGROUNDS) as Array<keyof typeof BACKGROUNDS>).map((scene) => <button key={scene} type="button"  className={!activeCustomSceneId && selectedPreset === scene ? "is-selected" : ""} onClick={() => selectPresetScene(scene)}><span style={{ backgroundImage: `url(${BACKGROUNDS[scene]})` }}/><strong>Christmas {scene}</strong></button>)}</div></>}
             {panel === "voice" && <><button type="button" className="floating-option" onClick={() => setMuted((value) => !value)}><Icon name="sound" size={18}/> Vivian voice <strong>{muted ? "Off" : "On"}</strong></button><label className="floating-range">Speaking speed <span>{speechSpeed.toFixed(2)}×</span><input type="range" min="0.8" max="1.2" step="0.02" value={speechSpeed} onChange={(event) => setSpeechSpeed(Number(event.target.value))}/></label><p role="status">{voiceSpeedNotice || "ใช้ร่วมกันทุกบัญชี"}</p>{voiceSpeedNotice.includes("ไม่ได้") || voiceSpeedNotice.includes("ไม่สำเร็จ") ? <button type="button" onClick={() => { if (voiceSpeedNotice.includes("โหลด")) void refreshVoiceSpeed(); else setSpeechSpeed(speechSpeed); }}>ลองอีกครั้ง</button> : null}<button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Speech language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" className="floating-option" onClick={toggleRecording}><Icon name="mic" size={18}/> Microphone <strong>{recording ? "Listening" : "Start"}</strong></button></>}
              {panel === "status" && <StorageStatusPanel/>}
-              {panel === "settings" && <><div className="custom-instructions"><strong>Reset Vivian</strong><p>ล้างความจำ แชต Mood และความสัมพันธ์บนคลาวด์ที่ใช้ร่วมกัน รวมถึงแชตและคำแนะนำส่วนตัวบนอุปกรณ์นี้</p>{resetConfirming ? <div role="alertdialog" aria-label="ยืนยันรีเซ็ต Vivian"><p>ข้อมูลนี้จะถูกลบถาวรจากคลาวด์ที่ใช้ร่วมกันและแชตบนอุปกรณ์นี้ โมเดล การตั้งค่าเสียง และบัญชีล็อกอินจะยังอยู่</p><button type="button" className="floating-option" disabled={sending || resetting} onClick={() => { void resetVivian(); }}>ยืนยันรีเซ็ต Vivian</button><button type="button" className="floating-option" onClick={() => setResetConfirming(false)}>ยกเลิก</button></div> : <button type="button" className="floating-option" disabled={sending || resetting} onClick={() => setResetConfirming(true)}>{resetting ? "กำลังรีเซ็ต…" : "Reset memories and companion"}</button>}{resetNotice && <p role="status">{resetNotice}</p>}</div><div className="custom-instructions"><strong>Custom instructions</strong><p>How should Vivian speak with you?</p><textarea value={customInstructions} maxLength={2000} onChange={(event) => { const value = event.target.value; customInstructionsRef.current = value; setCustomInstructions(value); window.localStorage.setItem("vivian-custom-instructions", value); }} placeholder="Call me… Speak in Thai…"/></div><div className="custom-instructions jev-settings"><strong>Jev API <span>{jevConfigured === undefined ? "กำลังตรวจสอบ" : jevConfigured === null ? "ตรวจสอบไม่ได้" : jevConfigured ? "ตั้งค่าแล้ว" : "ยังไม่ได้ตั้งค่า"}</span></strong><p>ตั้งค่า TYPESAFE_API_KEY ใน Environment Variables ของ Vercel หรือ .env.local เพื่อช่วยตัดสินใจเรื่องความจำ เครื่องมือ ภาพ และข้อมูลล่าสุด โดย Vivian ยังตอบด้วยโมเดลสนทนาหลัก</p></div><button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" onClick={() => setInfoOpen(true)} className="floating-option"><Icon name="info" size={18}/> About Vivian</button></>}
+              {panel === "settings" && <><div className="custom-instructions"><strong>Reset Vivian</strong><p>ล้างความจำ แชต Mood และความสัมพันธ์บนคลาวด์ที่ใช้ร่วมกัน รวมถึงแชตและคำแนะนำส่วนตัวบนอุปกรณ์นี้</p>{resetConfirming ? <div role="alertdialog" aria-label="ยืนยันรีเซ็ต Vivian"><p>ข้อมูลนี้จะถูกลบถาวรจากคลาวด์ที่ใช้ร่วมกันและแชตบนอุปกรณ์นี้ โมเดล การตั้งค่าเสียง และบัญชีล็อกอินจะยังอยู่</p><button type="button" className="floating-option" disabled={sending || resetting} onClick={() => { void resetVivian(); }}>ยืนยันรีเซ็ต Vivian</button><button type="button" className="floating-option" onClick={() => setResetConfirming(false)}>ยกเลิก</button></div> : <button type="button" className="floating-option" disabled={sending || resetting} onClick={() => setResetConfirming(true)}>{resetting ? "กำลังรีเซ็ต…" : "Reset memories and companion"}</button>}{resetNotice && <p role="status">{resetNotice}</p>}</div><div className="custom-instructions"><strong>Custom instructions</strong><p>How should Vivian speak with you?</p><textarea value={customInstructions} maxLength={2000} onChange={(event) => { const value = event.target.value; customInstructionsRef.current = value; setCustomInstructions(value); window.localStorage.setItem("vivian-custom-instructions", value); }} placeholder="Call me… Speak in Thai…"/></div><button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" onClick={() => setInfoOpen(true)} className="floating-option"><Icon name="info" size={18}/> About Vivian</button></>}
             {panel === "settings" && <form action="/auth/signout" method="post" className="account-settings"><div><small>ลงชื่อเข้าใช้ด้วย</small><p>{accountEmail}</p></div><button type="submit">ออกจากระบบ <span aria-hidden="true">↗</span></button></form>}
           </div>
-        </section>}
+        </section>
       </div>
     </div>
     {languageOpen && <div className="chat-backdrop" role="presentation" onClick={() => setLanguageOpen(false)}><section className="info-sheet language-sheet" role="dialog" aria-modal="true" aria-label="ล็อกภาษาการพูด" onClick={(event) => event.stopPropagation()}><div className="memory-sheet-head"><div><small>LANGUAGE LOCK</small><h1>ภาษาการพูด</h1><p>ใช้ภาษาเดียวกันทั้งฟังเสียงและตอบด้วยเสียง</p></div><button type="button" onClick={() => setLanguageOpen(false)} aria-label="ปิด"><Icon name="close"/></button></div><div className="language-options">{LANGUAGE_OPTIONS.map((option) => <button key={option.code} type="button" className={speechLanguage === option.code ? "is-selected" : ""} onClick={() => { setSpeechLanguage(option.code); window.localStorage.setItem("vivian-speech-language", option.code); setLanguageOpen(false); }}><strong>{option.nativeName}</strong><span>{option.label} · {option.code.toUpperCase()}</span></button>)}</div></section></div>}

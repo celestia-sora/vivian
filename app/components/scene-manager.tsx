@@ -3,6 +3,7 @@
  * unauthenticated optimizer fetch or leaking storage references. */
 /* eslint-disable @next/next/no-img-element */
 import { useEffect, useRef, useState } from "react";
+import AnimatedFileUpload from "@/components/ui/smoothui/animated-file-upload";
 import { authFetch } from "@/lib/auth/fetch";
 import { SCENE_MAX_BYTES, SCENE_MAX_COUNT, SCENE_MIME_TYPES, validateSceneLabel, type VivianScene } from "@/lib/scenes";
 import { sceneRequest, type SceneLibrary } from "@/lib/use-scene-library";
@@ -18,7 +19,6 @@ export function SceneManager({ library }: { library: SceneLibrary }) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const labelInput = useRef<HTMLInputElement>(null);
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => { previewRequest.current?.abort(); }, []);
@@ -90,11 +90,15 @@ export function SceneManager({ library }: { library: SceneLibrary }) {
       <small>{[...label.trim().normalize("NFC")].length}/50 characters</small>
       {editor.replace && <>
         <p className="floating-note">Image source</p>
-        <div className="floating-tabs">{(["upload", "url"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "is-selected" : ""} disabled={working} onClick={() => { setMode(value); setPreview(null); setError(null); }}>{value === "upload" ? "Upload Image" : "Image URL"}</button>)}</div>
-        {mode === "upload" ? <>
-          <input ref={fileInput} type="file" aria-label="Scene image file" accept={SCENE_MIME_TYPES.join(",")} hidden onChange={(event) => { chooseFile(event.target.files?.[0]); event.target.value = ""; }}/>
-          <button type="button" className="scene-drop-area" disabled={working} onClick={() => fileInput.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (!working) chooseFile(event.dataTransfer.files[0]); }}>{file ? file.name : "Choose or drop an image"}<small>JPG, PNG, WebP or AVIF · up to 8 MB</small></button>
-        </> : <><label>Image URL<input type="url" required value={url} placeholder="https://example.com/wallpaper.jpg" disabled={working} onChange={(event) => { setUrl(event.target.value); setPreview(null); }}/></label><button type="button" className="floating-option" disabled={working || !url} onClick={() => void previewUrl()}>Preview image</button></>}
+        <div className="floating-tabs">{(["upload", "url"] as const).map((value) => <button type="button" key={value} aria-pressed={mode === value} className={mode === value ? "is-selected" : ""} disabled={working} onClick={() => { setMode(value); setFile(null); setPreview(null); setError(null); }}>{value === "upload" ? "Upload Image" : "Image URL"}</button>)}</div>
+        {mode === "upload" ? <AnimatedFileUpload
+          accept={SCENE_MIME_TYPES.join(",")}
+          className="vivian-upload"
+          disabled={working}
+          maxSize={SCENE_MAX_BYTES}
+          multiple={false}
+          onFilesSelected={(files) => chooseFile(files[0])}
+        /> : <><label>Image URL<input type="url" required value={url} placeholder="https://example.com/wallpaper.jpg" disabled={working} onChange={(event) => { setUrl(event.target.value); setPreview(null); }}/></label><button type="button" className="floating-option" disabled={working || !url} onClick={() => void previewUrl()}>Preview image</button></>}
       </>}
       {preview && <div className="scene-preview"><p className="floating-note">Preview</p><img src={preview} alt="Scene preview" onError={() => { setPreview(null); setError("Could not preview this image. Choose a valid image."); }}/></div>}
       {error && <p className="model-notice" role="alert">{error}</p>}
