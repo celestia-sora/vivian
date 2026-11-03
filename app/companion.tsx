@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { captureModelRestState, restoreModelRestState, type ModelRestState, type CubismRestModel } from "@/lib/model-rest-state";
 import { attachModelWind, type WindInternalModel } from "@/lib/model-wind";
 import { waitForCubismCore } from "@/lib/model-runtime";
@@ -196,6 +196,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [sttPreview, setSttPreview] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panel, setPanel] = useState<Panel | null>(null);
+  const panelRef = useRef<Panel | null>(null);
+  const sidebarOpenRef = useRef(false);
   const [greetingTrigger, setGreetingTrigger] = useState(0);
   const activeConversationRef = useRef("daily-talk");
   const [conversationSearch, setConversationSearch] = useState("");
@@ -1721,7 +1723,61 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
 
-  function openPanel(next: Panel) { setPanel(next); setSidebarOpen(true); if (next === "conversations") void history.refresh(); }
+  function openPanel(next: Panel) {
+    panelRef.current = next;
+    sidebarOpenRef.current = true;
+    try { window.sessionStorage.setItem("vivian-open-panel", next); } catch { /* Storage restrictions do not block navigation. */ }
+    setPanel(next);
+    setSidebarOpen(true);
+    if (next === "conversations") void history.refresh();
+  }
+  function backToNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    panelRef.current = null;
+    try { window.sessionStorage.removeItem("vivian-open-panel"); } catch { /* Ignore unavailable storage. */ }
+    setPanel(null);
+    // The phone has no persistent category rail: Back returns to Vivian and
+    // dismisses the full-screen menu. Desktop keeps the rail as its prior view.
+    const keepDesktopRail = !window.matchMedia("(max-width: 760px)").matches;
+    sidebarOpenRef.current = keepDesktopRail;
+    setSidebarOpen(keepDesktopRail);
+  }
+  function closeNavigation(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    panelRef.current = null;
+    sidebarOpenRef.current = false;
+    try { window.sessionStorage.removeItem("vivian-open-panel"); } catch { /* Ignore unavailable storage. */ }
+    setPanel(null);
+    setSidebarOpen(false);
+  }
+  useEffect(() => { panelRef.current = panel; sidebarOpenRef.current = sidebarOpen; }, [panel, sidebarOpen]);
+  useEffect(() => {
+    try {
+      const savedPanel = window.sessionStorage.getItem("vivian-open-panel");
+      if (savedPanel && ["conversations", "memories", "character", "scenes", "voice", "status", "settings"].includes(savedPanel)) {
+        panelRef.current = savedPanel as Panel;
+        sidebarOpenRef.current = true;
+        setPanel(savedPanel as Panel);
+        setSidebarOpen(true);
+      }
+    } catch { /* Storage restrictions do not block navigation. */ }
+  }, []);
+  useEffect(() => {
+    if (!sidebarOpen || !panel || !window.matchMedia("(max-width: 760px)").matches) return;
+    window.history.pushState({ vivianMenu: true, panel }, "");
+    const onHardwareBack = () => {
+      if (panelRef.current) {
+        panelRef.current = null;
+        setPanel(null);
+        setSidebarOpen(true);
+      } else if (sidebarOpenRef.current) {
+        sidebarOpenRef.current = false;
+        setSidebarOpen(false);
+      }
+    };
+    window.addEventListener("popstate", onHardwareBack);
+    return () => window.removeEventListener("popstate", onHardwareBack);
+  }, [sidebarOpen, panel]);
   function selectConversation(conversation: Conversation) {
     if (sending || resettingRef.current || !history.ready) return;
     setErrorNotice(null);
@@ -1783,6 +1839,17 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   function closeOrbRadial() {
     setRadialVisible(false);
   }
+  useEffect(() => {
+    if (!radialOpen) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(".orb-toolbar, .orb-button")) return;
+      closeOrbRadial();
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [radialOpen]);
   function closeComposer() {
     // Closing the composer resets its draft: text and attachment clear.
     setAttachedImage(null);
@@ -1928,14 +1995,14 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     </section>
     <div className={`floating-overlay ${sidebarOpen ? "is-visible" : ""}`} aria-hidden={!sidebarOpen}>
       <button className="floating-scrim" type="button" tabIndex={sidebarOpen ? 0 : -1} onClick={() => { setPanel(null); setSidebarOpen(false); }} aria-label="Close sidebar" />
-      <div className="floating-workspace">
+      <div className={`floating-workspace ${panel ? "menu-window" : ""}`}>
         <nav className="floating-sidebar" aria-label="Vivian navigation" inert={!sidebarOpen}>
           <div className="floating-sidebar-head"><span className="brand-mark" aria-hidden="true"/> Vivian <button type="button" onClick={() => { setPanel(null); setSidebarOpen(false); }} aria-label="Close sidebar"><Icon name="close" size={18}/></button></div>
           <button type="button" className="floating-new-chat" onClick={newConversation}><Icon name="plus" size={17}/> New Chat</button>
           {navigation.map((item) => <button key={item.key} type="button" className={`floating-nav-item ${panel === item.key ? "is-selected" : ""}`} onClick={() => openPanel(item.key)}><Icon name={item.icon} size={18}/>{item.label}</button>)}
         </nav>
-        {panel && <section className="floating-panel" role="dialog" aria-modal="true" aria-label={navigation.find((item) => item.key === panel)?.label}>
-          <div className="floating-panel-head"><div><small>VIVIAN / {panel.toUpperCase()}</small><h2>{navigation.find((item) => item.key === panel)?.label}</h2></div><button type="button" onClick={() => setPanel(null)} aria-label="Close panel"><Icon name="close" size={18}/></button></div>
+        {panel && <section className={`floating-panel ${panel === "settings" ? "settings-panel" : ""}`} role="dialog" aria-modal="true" aria-label={navigation.find((item) => item.key === panel)?.label}>
+          <div className="floating-panel-head"><button className="settings-back" type="button" onClick={backToNavigation} aria-label="Back to categories"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg></button><div><small>VIVIAN / {panel.toUpperCase()}</small><h2>{navigation.find((item) => item.key === panel)?.label}</h2></div><button type="button" onClick={closeNavigation} aria-label="Close menu"><Icon name="close" size={18}/></button></div>
           <div className="floating-panel-body">
             {panel === "conversations" && <>
               <label className="floating-search"><Icon name="search" size={17}/><input value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Search conversations" /></label>
