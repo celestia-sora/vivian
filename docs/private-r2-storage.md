@@ -39,7 +39,9 @@ while the previous image is still stored.
 3. Apply `supabase/migrations/20261005131311_private_r2_storage.sql`, then
    `supabase/migrations/20261005133532_storage_status.sql`, then
    `supabase/migrations/20261005135133_observed_r2_usage.sql`, then
-   `supabase/migrations/20261005152924_shared_r2_budget.sql`, after the existing
+   `supabase/migrations/20261005152924_shared_r2_budget.sql`, then
+   `supabase/migrations/20261104120000_shared_model_library.sql` and
+   `supabase/migrations/20261104122617_global_model_preference.sql`, after the existing
    scene migration. These add the quota ledger, provider-aware cleanup, and
    service-only Supabase usage aggregate, observed bucket accounting, and the shared
    8 GB budget with 2 GB unused. Ensure the Supabase project is active and the existing server
@@ -63,20 +65,35 @@ body limits. The server authorizes each upload batch and signs exact
 `Content-Length` values for five minutes. The browser supplies that forbidden
 request header automatically from the Blob size. Completion uses R2's actual
 part sizes and ETags, then checks the completed object size before exposing it.
-Download links are issued only for the authenticated owner and expire after five
-minutes. They are bearer links during that time: do not log or share them.
+Download links are issued to an authenticated account that owns the package or
+can read it from the shared Live2D library, and expire after five minutes. They
+are bearer links during that time: do not log or share them.
 
-Scene originals retain their source JPEG/PNG/WebP/AVIF bytes, MIME type and resolution; only thumbnails are converted to WebP. Scene downloads remain behind the existing authenticated API. Models are loaded
-on demand and validated again before rendering. IndexedDB caches cloud originals
-by owner; cached models remain usable when cloud access is temporarily down.
-Other accounts' cloud caches are not included in the model picker. Older
-local-only imports can be explicitly saved using **Save this model to cloud**.
+During the beta, ready Live2D packages use `library_scope='shared'`; all
+confirmed-email accounts can list, download, and delete them. The server flag
+`MODEL_LIBRARY_SHARED` defaults to enabled. Set it to `false` after beta to stop
+cross-account access without moving or deleting package rows; new uploads then
+return to private scope. The shared beta is planned to end at 12 Nov 2026 10:00
+GMT+7.
+
+The latest selected shared model is stored in the singleton
+`vivian_model_preferences` row and synchronized across devices and accounts.
+Texture quality remains local to each device. Other open tabs receive a
+Supabase Realtime Broadcast hint and refresh the authenticated model catalog;
+they preload the updated library but do not replace the model in an active
+conversation. Startup preloads the selected package first, then warms the
+remaining shared packages serially. The service-role key sends broadcasts
+server-side only. Clients get the Supabase URL and publishable key through the
+authenticated `/api/realtime/config` endpoint and subscribe to a public topic
+whose messages carry only an opaque change revision.
+
+Scene originals retain their source JPEG/PNG/WebP/AVIF bytes, MIME type and resolution; only thumbnails are converted to WebP. Scene downloads remain behind the existing authenticated API. Models are validated again before rendering. IndexedDB caches cloud originals; during beta, cached packages are recognized across accounts when their IDs appear in the authenticated shared-library response. Cached models remain usable when cloud access is temporarily down. Older local-only imports can be explicitly saved using **Save this model to cloud**.
 
 ## Frontend Status panel
 
 The config menu's former Gallery item is now **Status**. It displays used bytes,
 capacity and percentage for Supabase file storage, R2 total, Live2D and other
-files. Category figures are breakdowns of the same 8 GB shared budget, not separate allocations. The remaining 2 GB is deliberately unused. `GET /api/storage/status` checks the existing verified account allowlist.
+files. Category figures are breakdowns of the same 8 GB shared budget, not separate allocations. The remaining 2 GB is deliberately unused. `GET /api/storage/status` checks the signed-in verified account.
 The panel polls every five seconds while mounted and visible, refreshes after
 model/scene mutations, and aborts requests when closed. This is polling rather
 than a Supabase Realtime subscription. Failed checks display Unavailable or a

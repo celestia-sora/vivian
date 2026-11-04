@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import ts from 'typescript';
 import { shouldPauseModelStartup, clearModelLoadState } from '../lib/model-startup.ts';
 import { readModelSelection, resolveStartupModel } from '../lib/local-models.ts';
+import { singleFlightModel } from '../lib/model-preload.ts';
 
 function storage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -24,10 +25,12 @@ function startup({ local = [pack('local')], saved = 'local:model', interrupted =
     getCloudModels: () => new Promise((resolve) => { finishCloud = resolve; }),
     loadModelCatalog: async () => local,
     modelCloudRequestRef: { current: null }, accountId: 'account',
+    modelPreloadAbortRef: { current: null },
     localStorage: storage({ 'vivian-local-model': saved }), sessionStorage: storage(interrupted),
     shouldPauseModelStartup,
     isModelVisible: (pack, accountId) => !pack.cloudOwner || pack.cloudOwner === accountId || pack.cloudOwner === 'shared',
     readModelSelection, resolveStartupModel,
+    singleFlightModel,
     setModelSelectionResolved: (value) => { state.selectionResolved = value; },
     setModelPackages: (value) => { state.packages = typeof value === 'function' ? value(state.packages) : value; state.writes++; },
     setActiveModelId: (value) => { state.active = typeof value === 'function' ? value(state.active) : value; },
@@ -65,6 +68,14 @@ test('cloud-only startup restores the saved outfit instead of the first model', 
   await tick();
   assert.equal(f.state.active, 'second:model');
   assert.equal(f.state.ready, true);
+});
+
+test('cloud global model preference takes priority at startup over this device cache', async () => {
+  const f = startup({ local: [], saved: 'old:model' });
+  await tick();
+  f.finishCloud({ userId: 'account', models: [{ id: 'old' }, { id: 'latest' }], preference: { modelId: 'latest:model' } });
+  await tick();
+  assert.equal(f.state.active, 'latest:model');
 });
 
 test('cloud failure retains the readable device cache; cancelled startup does not update state', async () => {
@@ -124,6 +135,7 @@ test('the actual hydration wrapper waits for cloud only when local files need re
   const local = { ...pack('cached'), assets: [new Blob(['original'])] };
   const bindings = {
     hydrateModelPackage: async (pack, options) => pack.assets.length ? pack : options.recover(),
+    singleFlightModel,
     downloadCloudModel: async () => { downloads++; return { ...pack('missing'), assets: [new Blob(['recovered'])] }; },
     saveModelPackage: async () => { saves++; },
   };

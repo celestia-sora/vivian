@@ -59,16 +59,20 @@ test("JSON body limits actual streamed bytes even without Content-Length", async
 
 function fixture({ failDelete = false, failReserve = false, failInventory = false, inventory = new Map(), legacyShared = false, env = {} } = {}) {
   const rows = new Map(); const calls = []; const audits = [];
+  let modelPreference = null;
   let observed = { live2d_bytes: 0, other_bytes: 0 };
   const db = { rpc: async (name, args) => { assert.equal(name, "vivian_storage_observe"); observed = args; return {error:null}; }, from(table) {
-    const filters = []; const keys = []; let action = "select", payload;
+    const filters = []; const keys = []; let action = "select", payload, singleResult = false;
     const q = {
-      select() { return q; }, insert(value) { action = "insert"; payload = value; return q; }, update(value) { action = "update"; payload = value; return q; }, delete() { action = "delete"; return q; },
-      eq(key, value) { keys.push(key); filters.push((row) => row[key] === value); return q; }, in(key, values) { keys.push(key); filters.push((row) => values.includes(row[key])); return q; }, order() { return q; }, range() { return q; }, limit() { return q; }, maybeSingle() { q.single = true; return q; },
+      select() { return q; }, insert(value) { action = "insert"; payload = value; return q; }, upsert(value) { action = "upsert"; payload = value; return q; }, update(value) { action = "update"; payload = value; return q; }, delete() { action = "delete"; return q; }, single() { singleResult = true; return q; },
+      eq(key, value) { keys.push(key); filters.push((row) => row[key] === value); return q; }, in(key, values) { keys.push(key); filters.push((row) => values.includes(row[key])); return q; }, order() { return q; }, range() { return q; }, limit() { return q; }, maybeSingle() { singleResult = true; return q; },
       then(resolve, reject) {
         let result;
         if (table === "vivian_model_deletions") {
           result = action === "insert" ? (audits.push(payload), { error: null }) : { data: [], error: null };
+        } else if (table === "vivian_model_preferences") {
+          if (action === "upsert") { modelPreference = payload; result = { data: modelPreference, error: null }; }
+          else result = { data: singleResult ? modelPreference : modelPreference ? [modelPreference] : [], error: null };
         } else if (table === "vivian_storage_quotas") result = { data: [{ category: "live2d", used_bytes: [...rows.values()].filter((row) => row.category === "live2d").reduce((sum, row) => sum + row.byte_size, 0), limit_bytes: 8e9 }, { category: "other", used_bytes: 0, limit_bytes: 8e9 }], error: null };
         else if (action === "insert") {
           if (legacyShared && (Array.isArray(payload) ? payload : [payload]).some(row => "library_scope" in row)) result = { error: { code: "PGRST204", message: "Could not find the 'library_scope' column of 'vivian_storage_objects' in the schema cache" } };
@@ -80,7 +84,7 @@ function fixture({ failDelete = false, failReserve = false, failInventory = fals
           const found = [...rows.values()].filter((row) => filters.every((filter) => filter(row)));
           if (action === "delete") for (const row of found) rows.delete(row.id);
           if (action === "update") for (const row of found) Object.assign(row, payload);
-          result = { data: q.single ? found[0] ?? null : found, error: null };
+          result = { data: singleResult ? found[0] ?? null : found, error: null };
         }
         return Promise.resolve(result).then(resolve, reject);
       },
@@ -187,6 +191,19 @@ test("an unapplied shared migration degrades to per-account access instead of fa
   await assert.rejects(f.store.cloudModelDownload(f.db, other, started.id), (error) => error.status === 404);
   await f.store.removeCloudModel(f.db, user, started.id);
   assert.equal(f.rows.size, 0);
+});
+test("latest selected shared model preference syncs globally and rejects private or missing models", async () => {
+  const f = fixture();
+  const started = await f.store.beginCloudModel(f.db, user, upload);
+  await f.store.finishCloudModel(f.db, user, started.id);
+  const modelId = `${started.id}:model.model3.json`;
+  const saved = await f.store.saveCloudModelPreference(f.db, user, modelId);
+  const library = await f.store.cloudModels(f.db, other);
+  assert.equal(saved.modelId, modelId);
+  assert.equal(library.preference.modelId, modelId);
+  assert.equal(library.preference.revision, saved.revision);
+  await assert.rejects(f.store.saveCloudModelPreference(f.db, other, `${other}:model.model3.json`), error => error.status === 404);
+  await assert.rejects(f.store.saveCloudModelPreference(f.db, user, "not-a-model"), error => error.status === 400);
 });
 test("failed remote deletion retains the reservation; successful cleanup releases it", async () => {
   const failed = fixture({ failDelete: true }); const first = await failed.store.beginCloudModel(failed.db, user, upload);

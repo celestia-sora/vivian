@@ -4,7 +4,8 @@ import { importModelFiles, inspectPackage, type ModelPackage } from "@/lib/local
 import { MODEL_MAX_BYTES, MODEL_PART_BYTES, type CloudModel, type StorageUsage } from "@/lib/cloud-storage";
 import { notifyStorageChanged } from "@/lib/storage-status";
 
-export interface CloudLibrary { userId: string; models: CloudModel[]; usage: StorageUsage }
+export interface CloudModelPreference { modelId: string; lastSelectedAt: string; revision: string }
+export interface CloudLibrary { userId: string; models: CloudModel[]; usage: StorageUsage; preference?: CloudModelPreference | null }
 export const SHARED_MODEL_OWNER = "shared";
 async function json<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await authFetch(path, { ...options, cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(35_000) });
@@ -14,8 +15,9 @@ async function json<T>(path: string, options?: RequestInit): Promise<T> {
 }
 export const getCloudModels = (signal?: AbortSignal): Promise<CloudLibrary> => json("/api/models", { signal });
 export function cloudModelPlaceholder(model: CloudModel): ModelPackage {
-  return { id: model.id, assets: [], models: model.manifests.map((entry) => ({ id: `${model.id}:${entry.path}`, name: entry.name, manifestPath: entry.path, expressions: [], poses: [], motions: [] })) };
+  return { id: model.id, assets: [], ...(model.scope === "shared" ? { cloudOwner: SHARED_MODEL_OWNER } : {}), models: model.manifests.map((entry) => ({ id: `${model.id}:${entry.path}`, name: entry.name, manifestPath: entry.path, expressions: [], poses: [], motions: [] })) };
 }
+export const saveCloudModelPreference = (modelId: string): Promise<{ preference: CloudModelPreference }> => json("/api/models/preference", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId }) });
 export async function modelArchive(pack: ModelPackage, originalZip?: File): Promise<Blob> {
   if (originalZip) {
     if (originalZip.size > MODEL_MAX_BYTES) throw new Error("Model ZIP exceeds 512 MiB.");
@@ -52,7 +54,7 @@ export async function uploadCloudModel(pack: ModelPackage, progress: (message: s
   progress("Preparing model for private cloud storage…");
   const archive = await modelArchive(pack, originalZip);
   signal?.throwIfAborted();
-  const started = await json<{ id: string; userId: string }>("/api/models", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ byteSize: archive.size, manifests: pack.models.map((model) => ({ path: model.manifestPath, name: model.name })) }) });
+    const started = await json<{ id: string; userId: string; scope?: "private" | "shared" }>("/api/models", { method: "POST", signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ byteSize: archive.size, manifests: pack.models.map((model) => ({ path: model.manifestPath, name: model.name })) }) });
   notifyStorageChanged();
   let completing = false;
   try {
@@ -69,7 +71,7 @@ export async function uploadCloudModel(pack: ModelPackage, progress: (message: s
     const finished = await json<{ usage: StorageUsage }>(`/api/models/${started.id}`, { method: "POST", signal });
     notifyStorageChanged();
     const stored = await inspectPackage(pack.assets, started.id);
-    return { pack: { ...stored, cloudOwner: started.userId }, usage: finished.usage };
+    return { pack: { ...stored, cloudOwner: started.scope === "shared" ? SHARED_MODEL_OWNER : started.userId }, usage: finished.usage };
   } catch (error) {
     // Completion may have committed despite a lost response: never delete a
     // possibly successful model. Pending sessions are cleaned on refresh.
@@ -77,7 +79,7 @@ export async function uploadCloudModel(pack: ModelPackage, progress: (message: s
     throw error;
   }
 }
-export async function downloadCloudModel(model: CloudModel, _userId: string, signal?: AbortSignal): Promise<ModelPackage> {
+export async function downloadCloudModel(model: CloudModel, userId: string, signal?: AbortSignal): Promise<ModelPackage> {
   const { url, byteSize } = await json<{ url: string; byteSize: number }>(`/api/models/${model.id}`, { signal });
   if (byteSize < 1 || byteSize > MODEL_MAX_BYTES) throw new Error("Invalid model size.");
   const response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(180_000)]) : AbortSignal.timeout(180_000), cache: "no-store" });
@@ -93,7 +95,7 @@ export async function downloadCloudModel(model: CloudModel, _userId: string, sig
   } finally { reader.releaseLock(); }
   if (bytes !== byteSize) throw new Error("Model download is incomplete.");
   const pack = await importModelFiles([new File(chunks, "model.zip", { type: "application/zip" })]);
-  return { ...await inspectPackage(pack.assets, model.id), cloudOwner: SHARED_MODEL_OWNER };
+  return { ...await inspectPackage(pack.assets, model.id), cloudOwner: model.scope === "shared" ? SHARED_MODEL_OWNER : userId };
 }
 export async function deleteCloudModel(id: string): Promise<unknown> {
   const result = await json(`/api/models/${id}`, { method: "DELETE" }); notifyStorageChanged(); return result;

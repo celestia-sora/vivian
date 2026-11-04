@@ -6,6 +6,7 @@ import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { sceneClient } from "@/lib/scene-store";
 import { StorageError } from "@/lib/cloud-storage";
 import { cleanupCloudModels } from "@/lib/cloud-store";
+import { publishModelLibraryChange } from "@/lib/model-library-broadcast";
 export async function cloudApi(request: Request, action: (db: SupabaseClient, userId: string) => Promise<Response>): Promise<Response> {
   let userId: string | null = null;
   const denied = await requireApiAccess(request, (user) => { userId = user.id; });
@@ -19,6 +20,12 @@ export async function cloudApi(request: Request, action: (db: SupabaseClient, us
     const db = sceneClient(AbortSignal.timeout(30_000));
     const response = await action(db, owner);
     response.headers.set("Cache-Control", "private, no-store");
+    const pathname = new URL(request.url).pathname;
+    const modelMutation = pathname === "/api/models/preference" && request.method === "PATCH"
+      || /^\/api\/models\/[^/]+$/.test(pathname) && ["POST", "DELETE"].includes(request.method);
+    if (response.ok && modelMutation) {
+      after(() => publishModelLibraryChange());
+    }
     if (request.method === "GET" && new URL(request.url).pathname === "/api/models") after(() => cleanupCloudModels(sceneClient(AbortSignal.timeout(30_000)), owner).catch(() => {}));
     return response;
   } catch (error) {

@@ -21,6 +21,7 @@ function fixture({ paused = true, assets = [], fail = false, same = false } = {}
   const bindings = {
     AbortController, startTiming, cancelTiming, writeModelSelection,
     localStorage: { getItem: () => null, setItem() {} },
+    saveCloudModelPreference: async () => {},
     modelSelectionAbortRef: { current: null }, modelSelectionTimingRef: { current: undefined },
     modelRenderAbortRef: { current: null }, modelLoadIdRef: { current: 0 },
     modelRef: { current: {} }, setModelStatus() {},

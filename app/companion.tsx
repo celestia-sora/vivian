@@ -9,13 +9,15 @@ import { scheduleBackgroundWork } from "@/lib/startup-background";
 import { readChatResponse } from "@/lib/chat-stream";
 import { startTiming, finishTiming, cancelTiming, type LocalTiming } from "@/lib/performance";
 import { shouldPauseModelStartup, clearModelLoadState } from "@/lib/model-startup";
+import { singleFlightModel, preloadModelPackages } from "@/lib/model-preload";
+import { subscribeModelLibrary } from "@/lib/model-library-realtime";
 import { useConversationHistory } from "@/lib/use-conversation-history";
 import { historyMessage, HISTORY_CACHE_KEY, type HistoryMessage, type HistoryConversation } from "@/lib/chat-history";
 import { authFetch } from "@/lib/auth/fetch";
 import { decayCompanionState, type CompanionState, defaultCompanionState, normalizeMood, moodLabel, type Mood } from "@/lib/companion";
 import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
 import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, readModelSelection, resolveStartupModel, writeModelSelection, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
-import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, type CloudLibrary } from "@/lib/cloud-models";
+import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, saveCloudModelPreference, type CloudLibrary } from "@/lib/cloud-models";
 import { useVoicePreferences } from "@/lib/use-voice-preferences";
 import type { SpeechLanguage } from "@/lib/voice-preferences";
 import { useSceneLibrary } from "@/lib/use-scene-library";
@@ -30,19 +32,19 @@ import AnimatedFileUpload from "@/components/ui/smoothui/animated-file-upload";
 import type { AIState } from "@/components/ui/smoothui/ai-core";
 
 async function availableModelPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal?: AbortSignal): Promise<ModelPackage | undefined> {
-  return hydrateModelPackage(pack, {
-    signal,
+  return singleFlightModel(pack.id, (sharedSignal) => hydrateModelPackage(pack, {
+    signal: sharedSignal,
     recover: cloud ? async () => {
       // A readable local cache never waits for the cloud request.
       const library = await cloud;
-      signal?.throwIfAborted();
+      sharedSignal.throwIfAborted();
       const remote = library?.models.find((model) => model.id === pack.id);
       if (!remote || !library) throw new Error("Model files are unavailable on this device. Reconnect to the cloud or import the original model again.");
-      const downloaded = await downloadCloudModel(remote, library.userId, signal);
+      const downloaded = await downloadCloudModel(remote, library.userId, sharedSignal);
       await saveModelPackage(downloaded).catch(() => {});
       return downloaded;
     } : undefined,
-  });
+  }), signal);
 }
 
 type IconName = "config" | "info" | "wardrobe" | "chevron" | "mic" | "micOff" | "video" | "clip" | "message" | "send" | "close" | "memory" | "sound" | "language" | "status" | "scene" | "plus" | "search" | "sun" | "moon";
@@ -237,6 +239,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const selectedModel: ModelKey = "Miss";
   const [modelPackages, setModelPackages] = useState<ModelPackage[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
+  const activeModelIdRef = useRef<string | null>(null);
+  activeModelIdRef.current = activeModelId;
   const [modelsReady, setModelsReady] = useState(false);
   const [modelSelectionResolved, setModelSelectionResolved] = useState(false);
   const [modelImporting, setModelImporting] = useState(false);
@@ -245,6 +249,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const modelCloudRequestRef = useRef<Promise<CloudLibrary | null> | null>(null);
   const [cloudLibrary, setCloudLibrary] = useState<CloudLibrary | null>(null);
+  const modelPreloadAbortRef = useRef<AbortController | null>(null);
   const cloudLibraryRef = useRef<CloudLibrary | null>(null);
   cloudLibraryRef.current = cloudLibrary;
   const [modelPreview, setModelPreview] = useState<string | null>(null);
@@ -307,6 +312,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     const controller = new AbortController();
     const localRequest = loadModelCatalog().catch(() => [] as ModelPackage[]);
     let cancelCloudStart: (() => void) | undefined;
+    let cancelPreload: (() => void) | undefined;
     const cloudRequest = localRequest.then((local) => new Promise<CloudLibrary | null>((resolve) => {
       const start = () => {
         if (controller.signal.aborted) { resolve(null); return; }
@@ -348,19 +354,37 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       }
       setModelPackages((current) => {
         // Retain hydrated object identities so catalog sync doesn't reload GPU assets.
-        const merged = current.filter((pack) => !pack.cloudOwner || pack.cloudOwner === "shared" || (pack.cloudOwner === accountId && cloud.models.some((model) => model.id === pack.id)));
+        const sharedIds = new Set(cloud.models.filter((model) => model.scope === "shared").map((model) => model.id));
+        const merged = current.filter((pack) => !pack.cloudOwner || cloud.models.some((model) => model.id === pack.id))
+          .map((pack) => sharedIds.has(pack.id) && pack.cloudOwner !== "shared" ? { ...pack, cloudOwner: "shared" } : pack);
+        for (const pack of local.filter((entry) => sharedIds.has(entry.id))) {
+          if (!merged.some((entry) => entry.id === pack.id)) merged.push({ ...pack, cloudOwner: "shared" });
+        }
         for (const model of cloud.models) if (!merged.some((pack) => pack.id === model.id)) merged.push(cloudModelPlaceholder(model));
         return merged;
       });
-      const allPackages = [...packages, ...cloud.models.map(cloudModelPlaceholder).filter((pack) => !packages.some((localPack) => localPack.id === pack.id))];
-      selected = resolveStartupModel(allPackages, saved, selection);
+      const sharedCaches = local.filter((pack) => cloud.models.some((model) => model.scope === "shared" && model.id === pack.id)).map((pack) => ({ ...pack, cloudOwner: "shared" }));
+      const reconciledPackages = packages.filter((pack) => pack.cloudOwner !== "shared" || cloud.models.some((model) => model.scope === "shared" && model.id === pack.id));
+      const allPackages = [...reconciledPackages, ...sharedCaches.filter((pack) => !reconciledPackages.some((localPack) => localPack.id === pack.id)), ...cloud.models.map(cloudModelPlaceholder).filter((pack) => !local.some((localPack) => localPack.id === pack.id))];
+      const globalSelection = cloud.preference?.modelId;
+      selected = globalSelection && allPackages.some((pack) => pack.models.some((model) => model.id === globalSelection))
+        ? globalSelection : resolveStartupModel(allPackages, saved, selection);
       restoreStartup(selected);
       setActiveModelId(selected);
       setModelSelectionResolved(true);
+      if (cloud.models.length) {
+        const preloadController = new AbortController();
+        modelPreloadAbortRef.current?.abort();
+        modelPreloadAbortRef.current = preloadController;
+        cancelPreload = scheduleBackgroundWork(() => {
+          void preloadModelPackages(allPackages.filter((pack) => cloud.models.some((model) => model.id === pack.id)), globalSelection ?? selected,
+            (pack, signal) => availableModelPackage(pack, cloud, signal), preloadController.signal);
+        }, 5000);
+      }
     })().catch(() => {
       if (!cancelled) setModelNotice("Model storage is unavailable. Please try again.");
     }).finally(() => { if (!cancelled) { setModelSelectionResolved(true); setModelsReady(true); } });
-    return () => { cancelled = true; cancelCloudStart?.(); controller.abort(); };
+    return () => { cancelled = true; cancelCloudStart?.(); cancelPreload?.(); modelPreloadAbortRef.current?.abort(); controller.abort(); };
   }, [accountId]);
 
   useEffect(() => {
@@ -368,6 +392,40 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     if (activeModelId) writeModelSelection(localStorage, activeModelId);
     else localStorage.removeItem("vivian-local-model");
   }, [modelsReady, modelSelectionResolved, activeModelId]);
+
+  useEffect(() => {
+    let disposed = false;
+    let refreshTimer: number | undefined;
+    const unsubscribe = subscribeModelLibrary(() => {
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        void (async () => {
+          const cloud = await getCloudModels(AbortSignal.timeout(12_000)).catch(() => null);
+          if (!cloud || disposed) return;
+          setCloudLibrary(cloud);
+          setModelPackages((current) => {
+            const sharedIds = new Set(cloud.models.filter((model) => model.scope === "shared").map((model) => model.id));
+            const merged = current.filter((pack) => !pack.cloudOwner || pack.models.some((model) => model.id === activeModelIdRef.current) || cloud.models.some((model) => model.id === pack.id))
+              .map((pack) => sharedIds.has(pack.id) && pack.cloudOwner !== "shared" && !pack.models.some((model) => model.id === activeModelIdRef.current) ? { ...pack, cloudOwner: "shared" } : pack);
+            for (const model of cloud.models) if (!merged.some((pack) => pack.id === model.id)) merged.push(cloudModelPlaceholder(model));
+            return merged;
+          });
+          modelPreloadAbortRef.current?.abort();
+          const preloadController = new AbortController();
+          modelPreloadAbortRef.current = preloadController;
+          void preloadModelPackages(cloud.models.map(cloudModelPlaceholder), cloud.preference?.modelId ?? null,
+            (pack, signal) => availableModelPackage(pack, cloud, signal), preloadController.signal);
+          // Deliberately do not change activeModelId here; other tabs pick this on reload.
+        })();
+      }, 400);
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      modelPreloadAbortRef.current?.abort();
+    };
+  }, [accountId]);
 
   useEffect(() => {
     setModelPreview(null);
@@ -405,7 +463,9 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     // Commit the new cache before discarding the existing local-only package.
     await saveModelPackage(saved.pack).catch(() => {});
     setModelPackages((current) => current.map((entry) => entry.id === pack.id ? saved.pack : entry));
-    setActiveModelId(saved.pack.models.find((model) => model.manifestPath === activeModel?.manifestPath)?.id ?? saved.pack.models[0].id);
+    const selectedId = saved.pack.models.find((model) => model.manifestPath === activeModel?.manifestPath)?.id ?? saved.pack.models[0].id;
+    setActiveModelId(selectedId);
+    void saveCloudModelPreference(selectedId).catch(() => {});
     setCloudLibrary((current) => current ? { ...current, usage: saved.usage, models: [...current.models, { id: saved.pack.id, byteSize: 0, manifests: saved.pack.models.map((model) => ({ path: model.manifestPath, name: model.name })) }] } : current);
     await removeModelPackage(pack.id).catch(() => {});
     setModelNotice("Model saved privately to cloud.");
@@ -439,6 +499,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       setModelPackages((current) => current.map((entry) => entry.id === pack.id ? downloaded : modelCatalogEntry(entry)));
       setActiveModelId(id);
       writeModelSelection(localStorage, id);
+      if (cloudLibrary?.models.some((model) => model.id === pack.id)) void saveCloudModelPreference(id).catch(() => {});
       setModelNotice(null);
       setModelPaused(false);
       setModelReload((value) => value + 1);

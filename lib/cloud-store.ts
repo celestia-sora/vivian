@@ -6,6 +6,7 @@ import { sceneThumbnailKey } from "@/lib/scenes";
 import { r2Configuration, r2Inventory, startModelUpload, signModelParts, completeModelUpload, deleteR2Object, signModelDownload, putR2Image } from "@/lib/r2";
 
 export interface StorageObject { id: string; user_id: string | null; category: StorageCategory; object_key: string; byte_size: number; state: "pending" | "ready" | "deleting"; upload_id: string | null; library_scope?: "private" | "shared"; metadata: { manifests?: CloudModel["manifests"] }; created_at: string }
+export interface ModelPreference { modelId: string; lastSelectedAt: string; revision: string }
 function check(error: { code?: string } | null): void {
   if (error?.code === "23514") throw new StorageError("Storage quota exceeded. Delete unused files before uploading.", 409);
   if (error) throw new StorageError("Cloud storage is temporarily unavailable.", 503);
@@ -19,7 +20,7 @@ export const sharedModelLibrary = (): boolean => process.env.MODEL_LIBRARY_SHARE
 function missingSharedSupport(error: { code?: string; message?: string } | null): boolean {
   if (!error) return false;
   if (error.code === "42703" || error.code === "42P01" || error.code === "PGRST204") return true;
-  return typeof error.message === "string" && /library_scope|vivian_model_deletions/i.test(error.message);
+  return typeof error.message === "string" && /library_scope|vivian_model_deletions|vivian_model_preferences/i.test(error.message);
 }
 export async function storageUsage(db: SupabaseClient): Promise<StorageUsage> {
   const { data, error } = await db.from("vivian_storage_quotas").select("category,used_bytes,external_bytes,limit_bytes"); check(error);
@@ -69,7 +70,7 @@ export async function readableModel(db: SupabaseClient, userId: string, id: stri
   if (row.state === "ready" && row.library_scope === "shared" && sharedModelLibrary()) return row;
   throw new StorageError("Model not found.", 404);
 }
-function present(row: StorageObject): CloudModel { return { id: row.id, byteSize: Number(row.byte_size), manifests: modelManifests(row.metadata.manifests) }; }
+function present(row: StorageObject): CloudModel { return { id: row.id, byteSize: Number(row.byte_size), manifests: modelManifests(row.metadata.manifests), scope: row.library_scope ?? "private" }; }
 export async function cloudModels(db: SupabaseClient, userId: string) {
   r2Configuration();
   const own = await db.from("vivian_storage_objects").select("*").eq("user_id", userId).eq("category", "live2d").eq("state", "ready").order("created_at", { ascending: true }); check(own.error);
@@ -84,7 +85,27 @@ export async function cloudModels(db: SupabaseClient, userId: string) {
     } else if (!missingSharedSupport(shared.error)) check(shared.error);
   }
   rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  return { userId, models: rows.map(present), usage: await storageUsage(db) };
+  const preferenceResult = await db.from("vivian_model_preferences").select("selected_model_id,last_selected_at,revision").eq("id", "global").maybeSingle();
+  if (preferenceResult.error && !missingSharedSupport(preferenceResult.error)) check(preferenceResult.error);
+  const preferenceRow = preferenceResult.data as { selected_model_id: string; last_selected_at: string; revision: string } | null;
+  const preference = preferenceRow && rows.some((row) => row.id === preferenceRow.selected_model_id.split(":", 1)[0])
+    ? { modelId: preferenceRow.selected_model_id, lastSelectedAt: preferenceRow.last_selected_at, revision: preferenceRow.revision }
+    : null;
+  return { userId, models: rows.map(present), usage: await storageUsage(db), preference };
+}
+export async function saveCloudModelPreference(db: SupabaseClient, userId: string, input: unknown): Promise<ModelPreference> {
+  if (typeof input !== "string" || input.length > 2048 || !input.includes(":")) throw new StorageError("Invalid model selection.", 400);
+  const separator = input.indexOf(":");
+  const packageId = input.slice(0, separator);
+  const manifestPath = input.slice(separator + 1);
+  storageId(packageId);
+  const row = await readableModel(db, userId, packageId);
+  if (!sharedModelLibrary() || row.library_scope !== "shared" || !modelManifests(row.metadata.manifests).some((manifest) => manifest.path === manifestPath)) throw new StorageError("Select a model from the shared library.", 404);
+  const lastSelectedAt = new Date().toISOString();
+  const revision = randomUUID();
+  const { error } = await db.from("vivian_model_preferences").upsert({ id: "global", selected_model_id: input, last_selected_at: lastSelectedAt, revision, updated_at: lastSelectedAt }, { onConflict: "id" });
+  check(error);
+  return { modelId: input, lastSelectedAt, revision };
 }
 export async function beginCloudModel(db: SupabaseClient, userId: string, input: unknown) {
   r2Configuration();
@@ -101,7 +122,7 @@ export async function beginCloudModel(db: SupabaseClient, userId: string, input:
   check(error);
   const uploadId = await startModelUpload(key);
   check((await db.from("vivian_storage_objects").update({ upload_id: uploadId }).eq("id", id).eq("user_id", userId).eq("state", "pending")).error);
-  return { id, userId, usage: await storageUsage(db) };
+  return { id, userId, scope: sharedModelLibrary() ? "shared" : "private", usage: await storageUsage(db) };
 }
 export async function cloudModelParts(db: SupabaseClient, userId: string, id: string, first: number) {
   const row = await ownedObject(db, userId, id);
