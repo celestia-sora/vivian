@@ -2,6 +2,7 @@ import { requireApiAccess } from "@/lib/auth/server";
 import { NextResponse } from "next/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { speechText, speechTextWithAudioTags } from "@/lib/speech";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const maxDuration = 30;
 
@@ -16,16 +17,33 @@ export async function POST(request: Request): Promise<Response> {
   if (!quota.allowed) return rateLimitedResponse(quota.retryAfter);
   const startedAt = Date.now();
   const apiKey = process.env.ELEVENLABS_API_KEY;
-  const voiceId = process.env.ELEVENLABS_VOICE_ID;
+  const envVoiceId = process.env.ELEVENLABS_VOICE_ID;
   if (!apiKey) return NextResponse.json({ error: "ELEVENLABS_API_KEY is not configured" }, { status: 500 });
-  if (!voiceId) return NextResponse.json({ error: "ELEVENLABS_VOICE_ID is not configured" }, { status: 500 });
 
   let body: unknown;
   try { body = await request.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON body", status: 400 }, { status: 400 }); }
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Text is required", status: 400 }, { status: 400 });
-  const { text, language } = body as Record<string, unknown>;
+  const { text, language, voiceId: reqVoiceId } = body as Record<string, unknown>;
   if (typeof text !== "string" || text.length > 5000) return NextResponse.json({ error: "Text is required and must be under 5000 characters", status: 400 }, { status: 400 });
+
+  let effectiveVoiceId = (typeof reqVoiceId === "string" && reqVoiceId.trim()) ? reqVoiceId.trim() : "";
+  if (!effectiveVoiceId) {
+    try {
+      const db = getSupabaseAdmin(AbortSignal.timeout(3000));
+      const res = await db.from("vivian_voice_preferences").select("voice_id").eq("id", "global").maybeSingle();
+      if (res.data?.voice_id && typeof res.data.voice_id === "string") {
+        effectiveVoiceId = res.data.voice_id.trim();
+      }
+    } catch {
+      // Fallback to env
+    }
+  }
+  if (!effectiveVoiceId) {
+    effectiveVoiceId = envVoiceId || "";
+  }
+  if (!effectiveVoiceId) return NextResponse.json({ error: "ELEVENLABS_VOICE_ID is not configured and no voiceId provided", status: 500 }, { status: 500 });
+
   const speechLanguage = language === "global" || language === "en" || language === "ja" || language === "ko" || language === "zh" || language === "th" ? language : "global";
   const cleanText = speechText(text, speechLanguage);
   const taggedText = speechTextWithAudioTags(text, speechLanguage);
@@ -42,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
       },
       signal: AbortSignal.timeout(upstreamTimeoutMs),
       body: JSON.stringify({
-        inputs: [{ text: taggedText, voice_id: voiceId }],
+        inputs: [{ text: taggedText, voice_id: effectiveVoiceId }],
         model_id: "eleven_v4",
         language_code: speechLanguage === "th" ? "th" : speechLanguage === "ja" || speechLanguage === "ko" || speechLanguage === "zh" || speechLanguage === "en" ? speechLanguage : undefined,
         apply_text_normalization: "auto",
@@ -53,8 +71,6 @@ export async function POST(request: Request): Promise<Response> {
       console.warn("ElevenLabs TTS rejected", { status: response.status, elapsedMs: Date.now() - startedAt, textLength: cleanText.length });
       return NextResponse.json({ error: "ElevenLabs TTS request failed", code: "TTS_UPSTREAM", status: response.status }, { status: response.status, headers: { "Cache-Control": "no-store" } });
     }
-    // fetch resolves at headers; the same timeout also covers the entire body.
-    // A stalled/truncated audio stream must use the text-chat fallback too.
     phase = "audio";
     const audio = await response.arrayBuffer();
     if (audio.byteLength === 0) {
@@ -62,7 +78,7 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: "ElevenLabs returned no audio", code: "TTS_UPSTREAM", status: 502 }, { status: 502, headers: { "Cache-Control": "no-store" } });
     }
     const elapsedMs = Date.now() - startedAt;
-    console.info("ElevenLabs TTS ready", { elapsedMs, textLength: cleanText.length, language: speechLanguage, bytes: audio.byteLength });
+    console.info("ElevenLabs TTS ready", { elapsedMs, textLength: cleanText.length, language: speechLanguage, bytes: audio.byteLength, voiceId: effectiveVoiceId });
     return new NextResponse(audio, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store", "Server-Timing": `elevenlabs;dur=${Date.now() - providerStarted}, tts_route;dur=${elapsedMs}` } });
   } catch (error) {
     const name = error instanceof Error ? error.name : "unknown";

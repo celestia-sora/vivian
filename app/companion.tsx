@@ -195,7 +195,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const interactedRef = useRef(false);
   const lastActivityRef = useRef(Date.now());
   const idleBusyRef = useRef(false);
-  const speechSpeedRef = useRef(.98);
+  const voiceIdRef = useRef("");
   const speechLanguageRef = useRef<SpeechLanguage>("th");
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const videoStreamRef = useRef<MediaStream | null>(null);
@@ -286,7 +286,9 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const sceneLibrary = useSceneLibrary(PRESET_SCENE_IMAGES, accountId, backgroundReady);
   const activeCustomSceneId = sceneLibrary.preferences.activeSceneId;
   const selectedPreset = sceneLibrary.preferences.preset ?? backgroundMode;
-  const { speed: speechSpeed, language: speechLanguage, save: setSpeechSpeed, saveLanguage, notice: voiceSpeedNotice, refresh: refreshVoiceSpeed } = useVoicePreferences();
+  const { voiceId, language: speechLanguage, saveVoiceId, saveLanguage, notice: voiceNotice, refresh: refreshVoicePreferences } = useVoicePreferences();
+  const [voiceIdInput, setVoiceIdInput] = useState("");
+  useEffect(() => { setVoiceIdInput(voiceId); }, [voiceId]);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const history = useConversationHistory(initialGreeting.current, GREETING_PENDING, sending || resetting);
@@ -299,7 +301,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   activeConversationRef.current = activeConversationId;
   sendingRef.current = sending;
   mutedRef.current = muted;
-  speechSpeedRef.current = speechSpeed;
+  voiceIdRef.current = voiceId;
   speechLanguageRef.current = speechLanguage;
   companionRef.current = companion;
 
@@ -1213,7 +1215,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       // Audio unlocking and provider generation are independent. Playback still
       // waits for unlocking before using the shared Safari audio element.
       const [ready] = await Promise.all([
-        authFetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, signal: abort.signal, body: JSON.stringify({ text, speed: speechSpeedRef.current, language: speechLanguageRef.current }) }).then(async (response) => {
+        authFetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, signal: abort.signal, body: JSON.stringify({ text, voiceId: voiceIdRef.current, language: speechLanguageRef.current }) }).then(async (response) => {
           const blob = response.ok ? await withTimeout(response.blob(), TTS_TIMEOUT_MS, null) : null;
           if (blob?.size && speakId === speakIdRef.current) {
             finishTiming(downloadTiming, { serverTiming: response.headers.get("server-timing") ?? "unavailable" });
@@ -2237,7 +2239,42 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
               {modelNotice && <p className="model-notice" role="alert">{modelNotice}</p>}
             </>}
             {panel === "scenes" && <><SceneManager library={sceneLibrary}/><p className="floating-note">Default backgrounds</p><div className="scene-grid">{(Object.keys(BACKGROUNDS) as Array<keyof typeof BACKGROUNDS>).map((scene) => <button key={scene} type="button"  className={!activeCustomSceneId && selectedPreset === scene ? "is-selected" : ""} onClick={() => selectPresetScene(scene)}><span style={{ backgroundImage: `url(${BACKGROUNDS[scene]})` }}/><strong>Christmas {scene}</strong></button>)}</div></>}
-            {panel === "voice" && <><button type="button" className="floating-option" onClick={() => setMuted((value) => !value)}><Icon name="sound" size={18}/> Vivian voice <strong>{muted ? "Off" : "On"}</strong></button><label className="floating-range">Speaking speed <span>{speechSpeed.toFixed(2)}×</span><input type="range" min="0.8" max="1.2" step="0.02" value={speechSpeed} onChange={(event) => setSpeechSpeed(Number(event.target.value))}/></label><p role="status">{voiceSpeedNotice || "ใช้ร่วมกันทุกบัญชี"}</p>{voiceSpeedNotice.includes("ไม่ได้") || voiceSpeedNotice.includes("ไม่สำเร็จ") ? <button type="button" onClick={() => { if (voiceSpeedNotice.includes("โหลด")) void refreshVoiceSpeed(); else setSpeechSpeed(speechSpeed); }}>ลองอีกครั้ง</button> : null}<button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Speech language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" className="floating-option" onClick={toggleRecording}><Icon name="mic" size={18}/> Microphone <strong>{recording ? "Listening" : "Start"}</strong></button></>}
+            {panel === "voice" && <>
+              <button type="button" className="floating-option" onClick={() => setMuted((value) => !value)}>
+                <Icon name="sound" size={18}/> Vivian voice <strong>{muted ? "Off" : "On"}</strong>
+              </button>
+              <div className="custom-instructions">
+                <strong>11Labs Voice ID</strong>
+                <p>Voice ID ที่ใช้งานอยู่ตอนนี้ (Global): <code style={{ color: "#e9b1d2", background: "#ffffff1a", padding: "2px 6px", borderRadius: "4px" }}>{voiceId || "Default (System)"}</code></p>
+                <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
+                  <input
+                    type="text"
+                    value={voiceIdInput}
+                    placeholder="ใส่ 11Labs Voice ID..."
+                    onChange={(e) => setVoiceIdInput(e.target.value)}
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "#fff", font: "inherit", fontSize: "13px" }}
+                  />
+                  <button
+                    type="button"
+                    className="floating-option"
+                    style={{ margin: 0, padding: "8px 14px" }}
+                    onClick={() => saveVoiceId(voiceIdInput)}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+              <p role="status">{voiceNotice || "บันทึกและใช้ร่วมกันทุกเครื่อง (Global)"}</p>
+              {voiceNotice.includes("ไม่ได้") || voiceNotice.includes("ไม่สำเร็จ") ? (
+                <button type="button" onClick={() => { if (voiceNotice.includes("โหลด")) void refreshVoicePreferences(); else saveVoiceId(voiceIdInput); }}>ลองอีกครั้ง</button>
+              ) : null}
+              <button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}>
+                <Icon name="language" size={18}/> Speech language <strong>{speechLanguage.toUpperCase()}</strong>
+              </button>
+              <button type="button" className="floating-option" onClick={toggleRecording}>
+                <Icon name="mic" size={18}/> Microphone <strong>{recording ? "Listening" : "Start"}</strong>
+              </button>
+            </>}
              {panel === "status" && <StorageStatusPanel/>}
               {panel === "settings" && <><div className="custom-instructions"><strong>Reset Vivian</strong><p>ล้างความจำ แชต Mood และความสัมพันธ์บนคลาวด์ที่ใช้ร่วมกัน รวมถึงแชตและคำแนะนำส่วนตัวบนอุปกรณ์นี้</p>{resetConfirming ? <div role="alertdialog" aria-label="ยืนยันรีเซ็ต Vivian"><p>ข้อมูลนี้จะถูกลบถาวรจากคลาวด์ที่ใช้ร่วมกันและแชตบนอุปกรณ์นี้ โมเดล การตั้งค่าเสียง และบัญชีล็อกอินจะยังอยู่</p><button type="button" className="floating-option" disabled={sending || resetting} onClick={() => { void resetVivian(); }}>ยืนยันรีเซ็ต Vivian</button><button type="button" className="floating-option" onClick={() => setResetConfirming(false)}>ยกเลิก</button></div> : <button type="button" className="floating-option" disabled={sending || resetting} onClick={() => setResetConfirming(true)}>{resetting ? "กำลังรีเซ็ต…" : "Reset memories and companion"}</button>}{resetNotice && <p role="status">{resetNotice}</p>}</div><div className="custom-instructions"><strong>Custom instructions</strong><p>How should Vivian speak with you?</p><textarea value={customInstructions} maxLength={2000} onChange={(event) => { const value = event.target.value; customInstructionsRef.current = value; setCustomInstructions(value); window.localStorage.setItem("vivian-custom-instructions", value); }} placeholder="Call me… Speak in Thai…"/></div><button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" onClick={() => setInfoOpen(true)} className="floating-option"><Icon name="info" size={18}/> About Vivian</button></>}
             {panel === "settings" && <form action="/auth/signout" method="post" className="account-settings"><div><small>ลงชื่อเข้าใช้ด้วย</small><p>{accountEmail}</p></div><button type="submit">ออกจากระบบ <span aria-hidden="true">↗</span></button></form>}

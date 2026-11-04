@@ -1,6 +1,7 @@
-export const DEFAULT_SPEAKING_SPEED = .98;
-export function validSpeakingSpeed(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= .8 && value <= 1.2;
+export const DEFAULT_VOICE_ID = "";
+
+export function validVoiceId(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0 && value.trim().length <= 64;
 }
 
 export type SpeechLanguage = "global" | "th" | "en" | "ja" | "ko" | "zh";
