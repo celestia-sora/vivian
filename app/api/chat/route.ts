@@ -65,7 +65,9 @@ async function callGroq(
     model,
     messages,
     ...(options.firstToken ? { stream: true } : {}),
-    temperature: options.json ? 0 : 0.8,
+    // Qwen 3.8 instruct mode: skip chain-of-thought for fast, natural conversation.
+    ...(!options.json ? { reasoning_effort: "none", top_p: 0.8 } : {}),
+    temperature: options.json ? 0 : 0.7,
     max_tokens: options.maxTokens ?? 2500,
     ...(options.json ? { response_format: { type: "json_object" } } : {}),
   };
@@ -439,7 +441,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
       try {
         const msgs = [{ role: "system" as const, content: systemPrompt }, ...promptContents];
         providerStarted = Date.now();
-        let initialRes = await callGroq(groqApiKey, msgs, gModel, { maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        let initialRes = await callGroq(groqApiKey, msgs, gModel, { timeoutMs: 18000, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
         if (initialRes.status === 413) {
           // Log only the provider's short error metadata, never user prompts or API keys.
           const errorBody = await initialRes.clone().json().catch(() => null) as { error?: { message?: string; type?: string; code?: string } } | null;
@@ -452,6 +454,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
           });
           const compactMessages = compactGroqMessages(msgs);
           initialRes = await callGroq(groqApiKey, compactMessages, gModel, {
+            timeoutMs: 18000,
             maxTokens: Math.min(responseTokenLimit, 1000),
             firstToken: observeToken("groq"),
           });
