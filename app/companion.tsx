@@ -160,6 +160,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const startupTimingRef = useRef<LocalTiming | undefined>(undefined);
   const modelRestStateRef = useRef<ModelRestState | null>(null);
   const modelLoadIdRef = useRef(0);
+  const startupModelResolvedRef = useRef(false);
   const expressionActionRef = useRef(0);
   const motionActionRef = useRef(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -248,6 +249,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelImporting, setModelImporting] = useState(false);
   const [modelUploadKey, setModelUploadKey] = useState(0);
   const [modelStatus, setModelStatus] = useState<"empty" | "loading" | "ready" | "error">("empty");
+  const [startupModelPending, setStartupModelPending] = useState(false);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const modelCloudRequestRef = useRef<Promise<CloudLibrary | null> | null>(null);
   const [cloudLibrary, setCloudLibrary] = useState<CloudLibrary | null>(null);
@@ -344,18 +346,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       const saved = localStorage.getItem("vivian-local-model");
       const selection = readModelSelection(localStorage);
       let selected = resolveStartupModel(packages, saved, selection);
-      const restoreStartup = (selected: string | null) => {
+      const restoreStartup = (selected: string | null): boolean => {
+        let paused = false;
         try {
           if (shouldPauseModelStartup(sessionStorage, selected)) {
+            paused = true;
             setModelPaused(true);
             setModelStatus("error");
             setModelNotice("Model loading was interrupted twice. Use Reload model to retry with Auto quality.");
           }
         } catch { /* Storage restrictions do not block chat. */ }
+        return paused;
       };
-      restoreStartup(selected);
+      const startupPaused = restoreStartup(selected);
+      if (startupPaused) { startupModelResolvedRef.current = true; setStartupModelPending(false); }
       setModelPackages(packages);
       setActiveModelId(selected);
+      if (selected && !startupModelResolvedRef.current) setStartupModelPending(true);
       setModelSelectionResolved(false);
       // Render cached originals immediately; cloud latency is independent.
       if (selected) setModelsReady(true);
@@ -383,8 +390,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       const globalSelection = cloud.preference?.modelId;
       selected = globalSelection && allPackages.some((pack) => pack.models.some((model) => model.id === globalSelection))
         ? globalSelection : resolveStartupModel(allPackages, saved, selection);
-      restoreStartup(selected);
+      const cloudStartupPaused = restoreStartup(selected);
+      if (cloudStartupPaused) { startupModelResolvedRef.current = true; setStartupModelPending(false); }
       setActiveModelId(selected);
+      if (selected && !startupModelResolvedRef.current) setStartupModelPending(true);
       setModelSelectionResolved(true);
       if (cloud.models.length) {
         const preloadController = new AbortController();
@@ -491,6 +500,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
 
   async function importModels(files: File[]) {
     if (modelImporting || !files.length) return;
+    startupModelResolvedRef.current = true;
+    setStartupModelPending(false);
     setModelImporting(true);
     const wasPaused = modelPaused;
     setModelPaused(true);
@@ -533,6 +544,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
 
   async function chooseModel(id: string) {
     if (modelImporting) return;
+    startupModelResolvedRef.current = true;
+    setStartupModelPending(false);
     const pack = modelPackages.find((entry) => entry.models.some((model) => model.id === id));
     if (!pack) return;
     modelSelectionAbortRef.current?.abort();
@@ -922,6 +935,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         finishTiming(startupTimingRef.current);
         window.dispatchEvent(new Event("vivian-model-first-frame"));
         setModelStatus("ready");
+        startupModelResolvedRef.current = true;
+        setStartupModelPending(false);
         clearRecovery();
         window.addEventListener("resize", queueResize);
         window.addEventListener("orientationchange", handleOrientationChange);
@@ -943,6 +958,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         if (!disposed && loadId === modelLoadIdRef.current) {
           console.error("Live2D failed to load", error);
           setModelStatus("error");
+          startupModelResolvedRef.current = true;
+          setStartupModelPending(false);
           setModelNotice(error instanceof Error ? error.message : "Could not render this model. Check that it is compatible with Cubism 4 and includes all assets.");
         }
         if (!promoted) releaseResources?.();
@@ -2044,7 +2061,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   }
 
   // Show Vivian preloader while Live2D model is loading
-  const live2dLoading = !!activeModelId && modelStatus !== "ready";
+  const live2dLoading = startupModelPending;
 
   return <main className="companion-shell">
     <PagePreloader
