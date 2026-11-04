@@ -33,6 +33,10 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.doesNotMatch(persona, /Keep replies short to medium/);
   assert.match(route, /ไม่เกิน 1,000 ตัวอักษร/);
   assert.match(route, /limitReplyCharacters\(generatedText, replyCharacterLimit\)/);
+  assert.match(route, /LANGUAGE LOCK — FINAL RULE/);
+  assert.match(route, /modeLanguageNote\(language\)/);
+  assert.match(app, /saveLanguage/);
+  assert.doesNotMatch(app, /localStorage\.setItem\("vivian-speech-language"/);
   assert.match(story, /เป็นเพื่อนสนิทของ Vivian/);
   assert.match(dialogue, /shy, polite, slightly awkward tsundere companion/);
   assert.match(agents, /character-first shy, polite, slightly awkward tsundere companion/);

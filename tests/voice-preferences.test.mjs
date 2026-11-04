@@ -19,11 +19,16 @@ function handler(denied = null, unavailable = false) {
         assert.equal(table, "vivian_voice_preferences");
         let write;
         const query = {
-          upsert(row, options) { assert.equal(row.id, "global"); assert.equal(options.onConflict, "id"); write = row.speaking_speed; return query; },
-          select(column) { assert.equal(column, "speaking_speed"); return query; },
+          upsert(row, options) {
+            assert.equal(row.id, "global");
+            assert.equal(options.onConflict, "id");
+            write = { ...stored, ...row };
+            return query;
+          },
+          select(columns) { assert.equal(columns, "speaking_speed,speech_language"); return query; },
           eq(column, key) { assert.equal(column, "id"); assert.equal(key, "global"); return query; },
-          async single() { stored = write; return { data: { speaking_speed: stored }, error: null }; },
-          async maybeSingle() { return { data: stored === undefined ? null : { speaking_speed: stored }, error: null }; },
+          async single() { stored = write; return { data: stored, error: null }; },
+          async maybeSingle() { return { data: stored ?? null, error: null }; },
         }; return query;
       } };
     } };
@@ -41,10 +46,30 @@ test("speed survives a new handler/account and uses one shared singleton", async
   assert.equal((await loaded.json()).speakingSpeed, 1.06);
   assert.equal(loaded.headers.get("cache-control"), "private, no-store");
 });
-test("invalid speed cannot overwrite the global value", async () => {
-  stored = 1.06;
-  for (const speakingSpeed of [0, 1.21, "1.06", null]) assert.equal((await handler().PATCH(request({ speakingSpeed }))).status, 400);
-  assert.equal(stored, 1.06);
+test("speech language is shared globally and survives an account switch", async () => {
+  stored = undefined;
+  const defaults = await (await handler().GET(new Request("https://vivian.example"))).json();
+  assert.equal(defaults.speechLanguage, "th");
+  const saved = await handler().PATCH(request({ speechLanguage: "en" }));
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).speechLanguage, "en");
+  const other = await (await handler().GET(new Request("https://vivian.example"))).json();
+  assert.equal(other.speechLanguage, "en");
+  assert.equal(other.speakingSpeed, .98);
+});
+test("speed and language can be written together without dropping either", async () => {
+  stored = undefined;
+  const saved = await handler().PATCH(request({ speakingSpeed: 1.02, speechLanguage: "ja" }));
+  const data = await saved.json();
+  assert.equal(data.speakingSpeed, 1.02);
+  assert.equal(data.speechLanguage, "ja");
+});
+test("invalid speed or language cannot overwrite the global value", async () => {
+  stored = { speaking_speed: 1.06, speech_language: "en" };
+  for (const body of [{ speakingSpeed: 0 }, { speakingSpeed: 1.21 }, { speakingSpeed: "1.06" }, { speechLanguage: "fr" }, { speechLanguage: "EN" }, { speakingSpeed: null, speechLanguage: 3 }]) {
+    assert.equal((await handler().PATCH(request(body))).status, 400);
+  }
+  assert.deepEqual(stored, { speaking_speed: 1.06, speech_language: "en" });
 });
 test("unauthorized callers cannot read or write; cloud failure is explicit", async () => {
   const denied = Response.json({}, { status: 403 });

@@ -17,6 +17,7 @@ import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
 import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
 import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, type CloudLibrary } from "@/lib/cloud-models";
 import { useVoicePreferences } from "@/lib/use-voice-preferences";
+import type { SpeechLanguage } from "@/lib/voice-preferences";
 import { useSceneLibrary } from "@/lib/use-scene-library";
 import { SceneManager } from "@/app/components/scene-manager";
 import { SceneBackground } from "@/app/components/scene-background";
@@ -57,7 +58,6 @@ type Memory = { id: number; memory: string; category: string; importance: number
 type Panel = "conversations" | "memories" | "character" | "scenes" | "voice" | "status" | "settings";
 type Conversation = HistoryConversation;
 const CONVERSATIONS_KEY = HISTORY_CACHE_KEY;
-type SpeechLanguage = "global" | "th" | "en" | "ja" | "ko" | "zh";
 const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName: string }> = [
   { code: "global", label: "ทุกภาษา", nativeName: "Global" },
   { code: "th", label: "Thai", nativeName: "TH" },
@@ -73,12 +73,37 @@ const ORB_DIRECTIONS: Array<{ key: OrbDirection; icon: IconName; label: string }
   { key: "type", icon: "message", label: "chat" },
   { key: "settings", icon: "config", label: "setting" },
 ];
-const greetings = [
-  "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
-  "[curious] อ้อ มาแล้วเหรอคะ… มีเรื่องอะไรอยากเล่าให้ฉันฟังคะ? มะ-ไม่ได้อยากรู้เป็นพิเศษนะ",
-  "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
-];
-const greeting = (): Message => historyMessage("vivian", greetings[Math.floor(Math.random() * greetings.length)]);
+const greetings: Record<SpeechLanguage, string[]> = {
+  global: [
+    "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
+    "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
+  ],
+  th: [
+    "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
+    "[curious] อ้อ มาแล้วเหรอคะ… มีเรื่องอะไรอยากเล่าให้ฉันฟังคะ? มะ-ไม่ได้อยากรู้เป็นพิเศษนะ",
+    "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
+  ],
+  en: [
+    "[distant] Oh, you're here… Say what you came to say. I'm listening. N-not that I was waiting.",
+    "[playful] Back again? I just happened to still be here. Don't get the wrong idea.",
+  ],
+  ja: [
+    "[distant] 来たんだ… 話したいことがあるなら、聞くわよ。べ、別に待ってたわけじゃないけど。",
+    "[playful] また来たの？ たまたまここにいただけよ。勘違いしないでよね。",
+  ],
+  ko: [
+    "[distant] 왔구나… 할 말 있으면 해. 기, 기다린 건 아니니까.",
+    "[playful] 또 왔네? 난 그냥 우연히 여기 있었을 뿐이야. 착각하지 마.",
+  ],
+  zh: [
+    "[distant] 来了啊…… 有话就说吧，我在听。才、才不是在等你呢。",
+    "[playful] 又来了？ 我只是碰巧还在这里而已，别误会了。",
+  ],
+};
+const greeting = (language: SpeechLanguage = "th"): Message => {
+  const lines = greetings[language] ?? greetings.th;
+  return historyMessage("vivian", lines[Math.floor(Math.random() * lines.length)]);
+};
 const GREETING_PENDING = "Vivian กำลังคิดว่าจะกวนคุณยังไง...";
 const BACKGROUNDS = { day: "/backgrounds/christmas-day-4x3.jpg", night: "/backgrounds/christmas-night-4x3.jpg" } as const;
 const PRESET_SCENE_IMAGES = Object.values(BACKGROUNDS);
@@ -150,6 +175,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const greetingRequestRef = useRef<AbortController | null>(null);
   const greetingGenerationRef = useRef(0);
   const greetingTextRef = useRef<string | null>(null);
+  const greetingLanguageRef = useRef<SpeechLanguage | null>(null);
   const audioUnlockedByUserRef = useRef(false);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
@@ -239,8 +265,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const sceneLibrary = useSceneLibrary(PRESET_SCENE_IMAGES, accountId, backgroundReady);
   const activeCustomSceneId = sceneLibrary.preferences.activeSceneId;
   const selectedPreset = sceneLibrary.preferences.preset ?? backgroundMode;
-  const { speed: speechSpeed, save: setSpeechSpeed, notice: voiceSpeedNotice, refresh: refreshVoiceSpeed } = useVoicePreferences();
-  const [speechLanguage, setSpeechLanguage] = useState<SpeechLanguage>("th");
+  const { speed: speechSpeed, language: speechLanguage, save: setSpeechSpeed, saveLanguage, notice: voiceSpeedNotice, refresh: refreshVoiceSpeed } = useVoicePreferences();
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const history = useConversationHistory(initialGreeting.current, GREETING_PENDING, sending || resetting);
@@ -500,6 +525,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     greetingRequestRef.current = controller;
     greetingTextRef.current = null;
     greetingSpokenRef.current = false;
+    greetingLanguageRef.current = speechLanguageRef.current;
     void (async () => {
       try {
         const response = await authFetch("/api/chat", {
@@ -521,7 +547,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         }
       } catch {
         if ((timedOut || !controller.signal.aborted) && requestId === greetingGenerationRef.current && activeConversationRef.current === conversationId && messagesRef.current[0]?.text === GREETING_PENDING) {
-          const fallback = greeting();
+          const fallback = greeting(speechLanguageRef.current);
           setMessages((current) => current.length === 1 && current[0].text === GREETING_PENDING ? [fallback] : [...current, fallback]);
           if (audioUnlockedByUserRef.current && !mutedRef.current && !greetingSpokenRef.current) {
             greetingSpokenRef.current = true;
@@ -536,6 +562,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     return () => controller.abort();
   }, [preferencesReady, greetingTrigger, history.ready, setMessages]);
 
+  // A language change before the first user message regenerates the opening
+  // line, so the badge, the spoken greeting and the reply agree.
+  useEffect(() => {
+    if (!preferencesReady || !history.ready) return;
+    const usedLanguage = greetingLanguageRef.current;
+    if (!usedLanguage || usedLanguage === speechLanguage) return;
+    if (messagesRef.current.some((item) => item.from === "me")) return;
+    greetingGenerationRef.current += 1;
+    greetingRequestRef.current?.abort();
+    greetingRequestRef.current = null;
+    stopSpeech();
+    greetingTextRef.current = null;
+    greetingSpokenRef.current = false;
+    setMessages([{ ...initialGreeting.current }]);
+    setGreetingTrigger((value) => value + 1);
+  }, [speechLanguage, preferencesReady, history.ready, setMessages]);
+
   useEffect(() => {
     if (!sidebarOpen) return;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { setPanel(null); setSidebarOpen(false); } };
@@ -544,8 +587,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   }, [sidebarOpen]);
 
   useEffect(() => {
-    const storedLanguage = window.localStorage.getItem("vivian-speech-language");
-    if (LANGUAGE_OPTIONS.some((option) => option.code === storedLanguage)) setSpeechLanguage(storedLanguage as SpeechLanguage);
     setCustomInstructions(window.localStorage.getItem("vivian-custom-instructions") ?? "");
     const today = new Date().toISOString().slice(0, 10);
     const lastCheckIn = window.localStorage.getItem("vivian-checkin-date");
@@ -2083,7 +2124,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         </section>
       </div>
     </div>
-    {languageOpen && <div className="chat-backdrop" role="presentation" onClick={() => setLanguageOpen(false)}><section className="info-sheet language-sheet" role="dialog" aria-modal="true" aria-label="ล็อกภาษาการพูด" onClick={(event) => event.stopPropagation()}><div className="memory-sheet-head"><div><small>LANGUAGE LOCK</small><h1>ภาษาการพูด</h1><p>ใช้ภาษาเดียวกันทั้งฟังเสียงและตอบด้วยเสียง</p></div><button type="button" onClick={() => setLanguageOpen(false)} aria-label="ปิด"><Icon name="close"/></button></div><div className="language-options">{LANGUAGE_OPTIONS.map((option) => <button key={option.code} type="button" className={speechLanguage === option.code ? "is-selected" : ""} onClick={() => { setSpeechLanguage(option.code); window.localStorage.setItem("vivian-speech-language", option.code); setLanguageOpen(false); }}><strong>{option.nativeName}</strong><span>{option.label} · {option.code.toUpperCase()}</span></button>)}</div></section></div>}
+    {languageOpen && <div className="chat-backdrop" role="presentation" onClick={() => setLanguageOpen(false)}><section className="info-sheet language-sheet" role="dialog" aria-modal="true" aria-label="ล็อกภาษาการพูด" onClick={(event) => event.stopPropagation()}><div className="memory-sheet-head"><div><small>LANGUAGE LOCK</small><h1>ภาษาการพูด</h1><p>ใช้ภาษาเดียวกันทั้งฟังเสียงและตอบด้วยเสียง</p></div><button type="button" onClick={() => setLanguageOpen(false)} aria-label="ปิด"><Icon name="close"/></button></div><div className="language-options">{LANGUAGE_OPTIONS.map((option) => <button key={option.code} type="button" className={speechLanguage === option.code ? "is-selected" : ""} onClick={() => { saveLanguage(option.code); setLanguageOpen(false); }}><strong>{option.nativeName}</strong><span>{option.label} · {option.code.toUpperCase()}</span></button>)}</div></section></div>}
     {infoOpen && <div className="chat-backdrop" role="presentation" onClick={() => setInfoOpen(false)}><section className="info-sheet" role="dialog" aria-modal="true" aria-label="ข้อมูลเวอร์ชัน" onClick={(event) => event.stopPropagation()}><div className="memory-sheet-head"><div><small>VIVIAN INFO</small><h1>ข้อมูลเวอร์ชัน</h1><p>ข้อมูลของ companion เวอร์ชันที่กำลังใช้งาน</p></div><button type="button" onClick={() => setInfoOpen(false)} aria-label="ปิด"><Icon name="close"/></button></div><div className="info-list"><p><strong>App</strong>Vivian AI Companion</p><p><strong>Codename</strong>{APP_CODENAME}</p><p><strong>Version</strong>vivian 2.3.2</p><p><strong>Character</strong>Nothing</p></div></section></div>}
   </main>;
 }

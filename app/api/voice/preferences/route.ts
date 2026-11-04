@@ -1,30 +1,53 @@
 import { requireApiAccess } from "@/lib/auth/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { DEFAULT_SPEAKING_SPEED, validSpeakingSpeed } from "@/lib/voice-preferences";
+import {
+  DEFAULT_SPEAKING_SPEED,
+  DEFAULT_SPEECH_LANGUAGE,
+  validSpeakingSpeed,
+  validSpeechLanguage,
+} from "@/lib/voice-preferences";
 
 const headers = { "Cache-Control": "private, no-store" };
+const columns = "speaking_speed,speech_language";
 async function preferences(request: Request, write: boolean): Promise<Response> {
   const denied = await requireApiAccess(request);
   if (denied) return denied;
   let speed: number | undefined;
+  let language: string | undefined;
   if (write) {
     let body: unknown;
     try { body = await request.json(); } catch { return Response.json({ error: "Invalid JSON" }, { status: 400, headers }); }
-    if (!body || typeof body !== "object" || Array.isArray(body) || !validSpeakingSpeed((body as Record<string, unknown>).speakingSpeed)) {
-      return Response.json({ error: "Speaking speed must be between 0.8 and 1.2" }, { status: 400, headers });
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return Response.json({ error: "Invalid voice preferences" }, { status: 400, headers });
     }
-    speed = (body as { speakingSpeed: number }).speakingSpeed;
+    const record = body as Record<string, unknown>;
+    // PATCH accepts either field; sending both updates them together so the
+    // speed slider and the language selector share one singleton row.
+    if (!validSpeakingSpeed(record.speakingSpeed) && !validSpeechLanguage(record.speechLanguage)) {
+      return Response.json({ error: "Speaking speed must be 0.8-1.2 and speechLanguage must be global, th, en, ja, ko or zh" }, { status: 400, headers });
+    }
+    if (validSpeakingSpeed(record.speakingSpeed)) speed = record.speakingSpeed;
+    if (validSpeechLanguage(record.speechLanguage)) language = record.speechLanguage;
   }
   try {
     const db = getSupabaseAdmin(AbortSignal.timeout(8000));
     // One fixed singleton for all authorized accounts; never accept a user key.
+    const row = {
+      id: "global",
+      ...(speed === undefined ? {} : { speaking_speed: speed }),
+      ...(language === undefined ? {} : { speech_language: language }),
+      updated_at: new Date().toISOString(),
+    };
     const result = write
-      ? await db.from("vivian_voice_preferences").upsert({ id: "global", speaking_speed: speed, updated_at: new Date().toISOString() }, { onConflict: "id" }).select("speaking_speed").single()
-      : await db.from("vivian_voice_preferences").select("speaking_speed").eq("id", "global").maybeSingle();
+      ? await db.from("vivian_voice_preferences").upsert(row, { onConflict: "id" }).select(columns).single()
+      : await db.from("vivian_voice_preferences").select(columns).eq("id", "global").maybeSingle();
     if (result.error) throw new Error("Voice preference storage unavailable");
-    return Response.json({ speakingSpeed: result.data?.speaking_speed ?? DEFAULT_SPEAKING_SPEED }, { headers });
+    return Response.json({
+      speakingSpeed: result.data?.speaking_speed ?? DEFAULT_SPEAKING_SPEED,
+      speechLanguage: validSpeechLanguage(result.data?.speech_language) ? result.data.speech_language : DEFAULT_SPEECH_LANGUAGE,
+    }, { headers });
   } catch {
-    return Response.json({ error: "บันทึกค่าความเร็วบนคลาวด์ไม่ได้ กรุณาลองใหม่" }, { status: 503, headers });
+    return Response.json({ error: "บันทึกค่าภาษาและความเร็วบนคลาวด์ไม่ได้ กรุณาลองใหม่" }, { status: 503, headers });
   }
 }
 export const GET = (request: Request) => preferences(request, false);

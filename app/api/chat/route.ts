@@ -195,7 +195,34 @@ function parseDataUrl(url: string) {
   return { mimeType: "image/jpeg", base64: url.replace(/^data:[^,]+,/, "") };
 }
 
-function personalityPrompt(state: CompanionState, memoryContext: string, toolContext: string, summary: string, idle: boolean, character: CharacterKey, personality: string, characterName: string, language: "global" | "th" | "en" | "ja" | "ko" | "zh", visionIdle = false) {
+type SpeechLanguageCode = "global" | "th" | "en" | "ja" | "ko" | "zh";
+const LANGUAGE_DISPLAY: Record<Exclude<SpeechLanguageCode, "global">, string> = {
+  th: "ภาษาไทย (Thai)",
+  en: "English",
+  ja: "日本語 (Japanese)",
+  ko: "한국어 (Korean)",
+  zh: "中文 (Chinese)",
+};
+
+// The language lock is appended last so it outranks Thai-heavy persona text,
+// memories, summaries and earlier turns instead of competing with them.
+function languageLock(language: SpeechLanguageCode): string {
+  if (language === "global") {
+    return "\n\nLANGUAGE LOCK — FINAL RULE: Reply in the same language as the user's newest message. If that message has no clear language, use Thai. Do not switch language just because the notes, memories or character instructions above are written in Thai.";
+  }
+  const name = LANGUAGE_DISPLAY[language];
+  const avoid = language === "th" ? "Never answer in English or any other language" : "Never answer in Thai or any other language";
+  return `\n\nLANGUAGE LOCK — FINAL RULE: Reply only in ${name}. Every spoken sentence must be ${name}. ${avoid}, even though the notes, memories, earlier turns and character instructions above are written in Thai. Audio tags such as [playful] are metadata and stay in English.`;
+}
+
+// Passive modes (greeting/idle/vision) replace the user turn, so their system
+// note must carry the same language requirement as the final lock.
+function modeLanguageNote(language: SpeechLanguageCode): string {
+  if (language === "global") return "\n\nLANGUAGE LOCK: ใช้ภาษาเดียวกับข้อความล่าสุดของผู้ใช้ หากยังไม่มีข้อความให้ใช้ภาษาไทย";
+  return `\n\nLANGUAGE LOCK: Write this message only in ${LANGUAGE_DISPLAY[language]}. Do not write it in Thai unless the selected language is Thai.`;
+}
+
+function personalityPrompt(state: CompanionState, memoryContext: string, toolContext: string, summary: string, idle: boolean, character: CharacterKey, personality: string, characterName: string, language: SpeechLanguageCode, visionIdle = false) {
   const languageInstruction = { global: "ภาษาที่ผู้ใช้ใช้คุย", th: "ภาษาไทย", en: "English", ja: "日本語", ko: "한국어", zh: "中文" }[language];
   const romanInputInstruction = language === "ja" ? "เข้าใจภาษาญี่ปุ่นที่พิมพ์ด้วย romaji และตอบเป็นภาษาญี่ปุ่น" : language === "ko" ? "เข้าใจภาษาเกาหลีที่พิมพ์ด้วย romanization และตอบเป็นภาษาเกาหลี" : language === "zh" ? "เข้าใจภาษาจีนที่พิมพ์ด้วย pinyin และตอบเป็นภาษาจีน" : "";
   const moodStyle = personality === "shy" ? "ขี้อาย สุภาพ และเก็บอาการ" : personality === "playful" ? "หยอกอย่างเป็นกันเองและแอบเขินได้" : personality === "elegant" ? "สุขุม สุภาพ และรักษาท่าที" : "มั่นใจขึ้นเล็กน้อยแต่ยังมีความปากแข็งแบบ tsundere";
@@ -338,13 +365,13 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
   const memories = memoriesRes;
   const memoryContext = memories.length ? `\n\nความจำเกี่ยวกับผู้ใช้ที่ควรใช้เป็นบริบท:\n${memories.slice(0, 8).map((item) => `- [${item.category}] ${item.memory.slice(0, 240)}`).join("\n")}` : "";
   const toolContext = toolsPromptBlock(toolResults);
-  const systemPrompt = personalityPrompt(state, memoryContext, toolContext, state.conversationSummary, idle, character, personality, characterName, language, visionIdle) + plan.responseHint + vivianTurnPrompt(customInstructions);
+  const systemPrompt = personalityPrompt(state, memoryContext, toolContext, state.conversationSummary, idle, character, personality, characterName, language, visionIdle) + plan.responseHint + vivianTurnPrompt(customInstructions) + languageLock(language);
   const promptContents: ProviderMessage[] = greeting
-    ? [...contents.slice(-6), { role: "user", content: `[ระบบ: คำทักแรกของ session ใหม่] ข้อความก่อนหน้านี้เป็นบทสนทนาจาก session ที่แล้ว ให้ Vivian เปิดบทสนทนาใหม่สด ๆ 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจหยิบเรื่องค้างมาแซวหรือถามต่อได้ถ้ารู้จริง ห้ามเปิดด้วยประโยคบริการ ห้ามทวนคำตอบเดิมหรือแต่งเหตุการณ์ ไม่อ้างว่าเห็นผู้ใช้ผ่านกล้องหรือรู้เวลา/อากาศโดยไม่มีข้อมูล ห้ามพูดถึงระบบหรือ AI และห้ามใช้ emoji` }]
+    ? [...contents.slice(-6), { role: "user", content: `[ระบบ: คำทักแรกของ session ใหม่] ข้อความก่อนหน้านี้เป็นบทสนทนาจาก session ที่แล้ว ให้ Vivian เปิดบทสนทนาใหม่สด ๆ 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจหยิบเรื่องค้างมาแซวหรือถามต่อได้ถ้ารู้จริง ห้ามเปิดด้วยประโยคบริการ ห้ามทวนคำตอบเดิมหรือแต่งเหตุการณ์ ไม่อ้างว่าเห็นผู้ใช้ผ่านกล้องหรือรู้เวลา/อากาศโดยไม่มีข้อมูล ห้ามพูดถึงระบบหรือ AI และห้ามใช้ emoji${modeLanguageNote(language)}` }]
     : idle
-    ? [...contents.slice(-6), { role: "user", content: `[ระบบ: คำทักเมื่อบทสนทนาเงียบลง] Vivian เป็นฝ่ายหาเรื่องคุยต่อเอง 1-2 ประโยคตามนิสัย อาจแซว ท้าทาย ทำเป็นเบื่อความเงียบ หรือหยิบเรื่องล่าสุดมากวนต่อ ไม่ใช้ประโยคเชิงบริการ ไม่ทวนคำทักเดิม ไม่สมมติว่าผู้ใช้หายไปหรือเพิ่งกลับมา ห้ามอ้างว่าเห็นผู้ใช้ผ่านกล้องหรือรู้เวลา/อากาศโดยไม่มีข้อมูล ห้ามพูดถึงระบบหรือเครื่องมือ และห้ามใช้ emoji` }]
+    ? [...contents.slice(-6), { role: "user", content: `[ระบบ: คำทักเมื่อบทสนทนาเงียบลง] Vivian เป็นฝ่ายหาเรื่องคุยต่อเอง 1-2 ประโยคตามนิสัย อาจแซว ท้าทาย ทำเป็นเบื่อความเงียบ หรือหยิบเรื่องล่าสุดมากวนต่อ ไม่ใช้ประโยคเชิงบริการ ไม่ทวนคำทักเดิม ไม่สมมติว่าผู้ใช้หายไปหรือเพิ่งกลับมา ห้ามอ้างว่าเห็นผู้ใช้ผ่านกล้องหรือรู้เวลา/อากาศโดยไม่มีข้อมูล ห้ามพูดถึงระบบหรือเครื่องมือ และห้ามใช้ emoji${modeLanguageNote(language)}` }]
     : visionIdle
-      ? [{ role: "user", content: "[ระบบกล้อง Live] นี่คือภาพปัจจุบันจากกล้องของผู้ใช้ ให้ Vivian ใช้เฉพาะสิ่งที่เห็นจริงเป็นวัตถุดิบพูด 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจแซวหรือถามถึงรายละเอียดในภาพ ห้ามสร้างรายละเอียดที่ภาพไม่มี" }]
+      ? [{ role: "user", content: `[ระบบกล้อง Live] นี่คือภาพปัจจุบันจากกล้องของผู้ใช้ ให้ Vivian ใช้เฉพาะสิ่งที่เห็นจริงเป็นวัตถุดิบพูด 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจแซวหรือถามถึงรายละเอียดในภาพ ห้ามสร้างรายละเอียดที่ภาพไม่มี${modeLanguageNote(language)}` }]
       : contents;
 
   if (shouldSearch && !geminiApiKey) {

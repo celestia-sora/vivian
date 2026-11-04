@@ -544,8 +544,27 @@ test("tsundere persona and latest custom instructions reach all dialogue provide
     assert.match(prompt,/ตอบเป็น ภาษาไทย/);
     assert.match(prompt,/คำถามเกี่ยวกับตัว Vivian/);
     assert.match(prompt,/three or four genuine follow-up turns/);
-    assert.ok(prompt.endsWith(customInstructions));
+    assert.match(prompt,/LANGUAGE LOCK — FINAL RULE: Reply only in ภาษาไทย \(Thai\)/);
+    assert.match(prompt, new RegExp(`${customInstructions}[\\s\\S]*LANGUAGE LOCK — FINAL RULE`));
   }
+});
+
+test("a selected language is locked last and also drives passive greeting/idle modes", async () => {
+  const fixture = chatFixture();
+  await fixture.post("hello", { language: "en" });
+  const prompt = fixture.calls.find((call) => call.kind === "groq").body.messages[0].content;
+  assert.match(prompt, /LANGUAGE LOCK — FINAL RULE: Reply only in English\./);
+  assert.ok(prompt.trimEnd().endsWith("Audio tags such as [playful] are metadata and stay in English."));
+
+  const greeting = chatFixture();
+  await greeting.post("", { mode: "greeting", language: "en" });
+  const greetingTurn = greeting.calls.find((call) => call.kind === "groq").body.messages.at(-1).content;
+  assert.match(greetingTurn, /LANGUAGE LOCK: Write this message only in English\./);
+  assert.match(greeting.calls.find((call) => call.kind === "groq").body.messages[0].content, /Reply only in English/);
+
+  const globalMode = chatFixture();
+  await globalMode.post("", { mode: "greeting", language: "global" });
+  assert.match(globalMode.calls.find((call) => call.kind === "groq").body.messages.at(-1).content, /LANGUAGE LOCK: ใช้ภาษาเดียวกับข้อความล่าสุดของผู้ใช้/);
 });
 
 test("custom instructions are bounded; empty preferences still get the persistent tsundere persona", async () => {
@@ -553,7 +572,7 @@ test("custom instructions are bounded; empty preferences still get the persisten
     const fixture=chatFixture(); await fixture.post("วันนี้เหนื่อย",{customInstructions});
     const prompt=fixture.calls.find(call=>call.kind==="groq").body.messages[0].content;
     assert.match(prompt,/# Vivian — shy, polite tsundere companion/);
-    if(customInstructions) {assert.ok(prompt.endsWith("x".repeat(1200)));assert.equal(prompt.includes("x".repeat(1201)),false);}
+    if(customInstructions) {assert.match(prompt,new RegExp("x{1200}[\\s\\S]*LANGUAGE LOCK"));assert.equal(prompt.includes("x".repeat(1201)),false);}
     else assert.doesNotMatch(prompt,/Conversation preferences for this turn/);
     assert.doesNotMatch(prompt,/ตานี้ถูกถามชื่อ/);
   }
