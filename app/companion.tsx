@@ -784,9 +784,12 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     try { sessionStorage.setItem("vivian-model-loading", activeModel.id); } catch { /* Optional crash recovery. */ }
     void (async () => {
       try {
-        const PIXI = await import("pixi.js");
-        await waitForCubismCore(textureAbort.signal);
-        const { Live2DModel, Cubism4ModelSettings } = await import("pixi-live2d-display/cubism4");
+        // Kick off all three in parallel: Cubism Core polling, pixi.js parse, and live2d module load.
+        const [PIXI, , { Live2DModel, Cubism4ModelSettings }] = await Promise.all([
+          import("pixi.js"),
+          waitForCubismCore(textureAbort.signal),
+          import("pixi-live2d-display/cubism4"),
+        ]);
         if (!canvasRef.current || disposed) return;
         const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
         // Keep the 4096 textures intact, but render the canvas above CSS

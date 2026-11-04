@@ -198,19 +198,24 @@ export async function createModelResources(pack: ModelPackage, model: LocalModel
         if (!file) throw new Error(`Missing texture: ${path}`);
         return file;
       });
-      const sizes = [];
-      for (const texture of textures) { budget.signal?.throwIfAborted(); sizes.push(await readTextureSize(texture.blob)); }
+      // Read all texture sizes in parallel -- header-only reads, safe to run concurrently.
+      const sizes = await Promise.all(textures.map((texture) => { budget.signal?.throwIfAborted(); return readTextureSize(texture.blob); }));
       texturePlan = planTextures(sizes, budget);
       const cacheKey = JSON.stringify(["area-v2", pack.id, pack.renderRevision ?? "legacy", model.manifestPath, Boolean(budget.original), budget.maxDimension, budget.budgetBytes, textures.map((texture, index) => [texture.path, texture.blob.size, texturePlan[index]])]);
       const cached = texturePlan.some((plan) => plan.source.width !== plan.render.width || plan.source.height !== plan.render.height)
         ? await loadRenderCopies(cacheKey) : undefined;
-      for (let index = 0; index < textures.length; index++) {
-        budget.signal?.throwIfAborted();
-        const plan = texturePlan[index];
-        if (plan.source.width !== plan.render.width || plan.source.height !== plan.render.height) {
-          renderCopies.set(textures[index].path, cached?.get(textures[index].path) ?? await resizeTexture(textures[index].blob, plan.render, budget.signal));
-        }
-      }
+      // Resize all atlases in parallel -- createImageBitmap+canvas.toBlob calls are independent.
+      const resizeResults = await Promise.all(
+        textures.map(async (texture, index) => {
+          const plan = texturePlan[index];
+          if (plan.source.width !== plan.render.width || plan.source.height !== plan.render.height) {
+            budget.signal?.throwIfAborted();
+            return [texture.path, cached?.get(texture.path) ?? await resizeTexture(texture.blob, plan.render, budget.signal)] as const;
+          }
+          return null;
+        })
+      );
+      for (const result of resizeResults) { if (result) renderCopies.set(result[0], result[1]); }
       budget.signal?.throwIfAborted();
       if (!cached) void saveRenderCopies(cacheKey, renderCopies);
       finishTiming(preparationTiming, { cacheHit: Boolean(cached), resizedAtlases: renderCopies.size });
