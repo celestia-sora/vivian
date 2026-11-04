@@ -1,5 +1,5 @@
 import { cloudApi } from "@/lib/cloud-api";
-import { cloudModelDownload, finishCloudModel, removeCloudObject } from "@/lib/cloud-store";
+import { cloudModelDownload, finishCloudModel, removeCloudModel } from "@/lib/cloud-store";
 import { StorageError } from "@/lib/cloud-storage";
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -11,7 +11,7 @@ export async function POST(request: Request, context: Context) {
 }
 export async function DELETE(request: Request, context: Context) {
   return cloudApi(request, async (db, userId) => {
-    try { await removeCloudObject(db, userId, (await context.params).id); }
+    try { await removeCloudModel(db, userId, (await context.params).id); }
     catch (error) { if (!(error instanceof StorageError) || error.status !== 404) throw error; }
     return Response.json({ deleted: true });
   });

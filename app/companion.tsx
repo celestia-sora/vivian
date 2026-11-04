@@ -14,7 +14,7 @@ import { historyMessage, HISTORY_CACHE_KEY, type HistoryMessage, type HistoryCon
 import { authFetch } from "@/lib/auth/fetch";
 import { decayCompanionState, type CompanionState, defaultCompanionState, normalizeMood, moodLabel, type Mood } from "@/lib/companion";
 import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
-import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
+import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, readModelSelection, resolveStartupModel, writeModelSelection, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
 import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, type CloudLibrary } from "@/lib/cloud-models";
 import { useVoicePreferences } from "@/lib/use-voice-preferences";
 import type { SpeechLanguage } from "@/lib/voice-preferences";
@@ -57,6 +57,9 @@ type OrbDirection = "mic" | "camera" | "type" | "settings";
 type Memory = { id: number; memory: string; category: string; importance: number };
 type Panel = "conversations" | "memories" | "character" | "scenes" | "voice" | "status" | "settings";
 type Conversation = HistoryConversation;
+function isModelVisible(pack: ModelPackage, accountId: string): boolean {
+  return !pack.cloudOwner || pack.cloudOwner === accountId || pack.cloudOwner === "shared";
+}
 const CONVERSATIONS_KEY = HISTORY_CACHE_KEY;
 const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName: string }> = [
   { code: "global", label: "ทุกภาษา", nativeName: "Global" },
@@ -75,36 +78,36 @@ const ORB_DIRECTIONS: Array<{ key: OrbDirection; icon: IconName; label: string }
 ];
 const greetings: Record<SpeechLanguage, string[]> = {
   global: [
-    "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
-    "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
+    "[softly] มาแล้ว. วันนี้ไปไหนมา เล่าให้ฉันฟังหน่อย",
+    "[playful] กลับมาหาฉันแล้วสินะ. คราวนี้ห้ามหายไปนานแบบนั้นอีก",
   ],
   th: [
-    "[distant] มาแล้วเหรอคะ… มีอะไรก็พูดมาได้เลย ฉันฟังอยู่ ไม่ได้รอหรอกนะ",
-    "[curious] อ้อ มาแล้วเหรอคะ… มีเรื่องอะไรอยากเล่าให้ฉันฟังคะ? มะ-ไม่ได้อยากรู้เป็นพิเศษนะ",
-    "[playful] กลับมาแล้วสินะคะ… ฉันแค่บังเอิญยังอยู่ตรงนี้เอง อย่าเข้าใจผิดล่ะ",
+    "[softly] มาแล้ว. วันนี้ไปไหนมา เล่าให้ฉันฟังหน่อย",
+    "[curious] อ้อ มาแล้วเหรอ. มีอะไรเกิดขึ้นบ้าง ฉันอยากรู้",
+    "[playful] กลับมาหาฉันแล้วสินะ. คราวนี้ห้ามหายไปนานแบบนั้นอีก",
   ],
   en: [
-    "[distant] Oh, you're here… Say what you came to say. I'm listening. N-not that I was waiting.",
-    "[playful] Back again? I just happened to still be here. Don't get the wrong idea.",
+    "[softly] You're here. Where were you today? Tell me.",
+    "[playful] Back with me. Don't disappear for that long again.",
   ],
   ja: [
-    "[distant] 来たんだ… 話したいことがあるなら、聞くわよ。べ、別に待ってたわけじゃないけど。",
-    "[playful] また来たの？ たまたまここにいただけよ。勘違いしないでよね。",
+    "[softly] 来たんだ。今日はどこに行ってたの。話して。",
+    "[playful] 戻ってきたね。あんなに長くいなくならないで。",
   ],
   ko: [
-    "[distant] 왔구나… 할 말 있으면 해. 기, 기다린 건 아니니까.",
-    "[playful] 또 왔네? 난 그냥 우연히 여기 있었을 뿐이야. 착각하지 마.",
+    "[softly] 왔구나. 오늘은 어디 갔다 온 거야. 말해 줘.",
+    "[playful] 돌아왔네. 그렇게 오래 사라지지 마.",
   ],
   zh: [
-    "[distant] 来了啊…… 有话就说吧，我在听。才、才不是在等你呢。",
-    "[playful] 又来了？ 我只是碰巧还在这里而已，别误会了。",
+    "[softly] 你来了。今天去了哪里，跟我说。",
+    "[playful] 回来了。下次别消失那么久。",
   ],
 };
 const greeting = (language: SpeechLanguage = "th"): Message => {
   const lines = greetings[language] ?? greetings.th;
   return historyMessage("vivian", lines[Math.floor(Math.random() * lines.length)]);
 };
-const GREETING_PENDING = "Vivian กำลังคิดว่าจะกวนคุณยังไง...";
+const GREETING_PENDING = "Vivian กำลังนึกว่าจะพูดอะไร...";
 const BACKGROUNDS = { day: "/backgrounds/christmas-day-4x3.jpg", night: "/backgrounds/christmas-night-4x3.jpg" } as const;
 const PRESET_SCENE_IMAGES = Object.values(BACKGROUNDS);
 const APP_CODENAME = "None";
@@ -235,6 +238,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelPackages, setModelPackages] = useState<ModelPackage[]>([]);
   const [activeModelId, setActiveModelId] = useState<string | null>(null);
   const [modelsReady, setModelsReady] = useState(false);
+  const [modelSelectionResolved, setModelSelectionResolved] = useState(false);
   const [modelImporting, setModelImporting] = useState(false);
   const [modelUploadKey, setModelUploadKey] = useState(0);
   const [modelStatus, setModelStatus] = useState<"empty" | "loading" | "ready" | "error">("empty");
@@ -308,7 +312,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         if (controller.signal.aborted) { resolve(null); return; }
         void getCloudModels(AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)])).then(resolve, () => resolve(null));
       };
-      if (local.some((pack) => !pack.cloudOwner || pack.cloudOwner === accountId)) cancelCloudStart = scheduleBackgroundWork(start);
+      if (local.some((pack) => isModelVisible(pack, accountId))) cancelCloudStart = scheduleBackgroundWork(start);
       else start(); // A cloud-only active model remains critical work.
       controller.signal.addEventListener("abort", () => resolve(null), { once: true });
     }));
@@ -316,9 +320,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     void (async () => {
       const local = await localRequest;
       if (cancelled) return;
-      const packages = local.filter((pack) => !pack.cloudOwner || pack.cloudOwner === accountId);
+      const packages = local.filter((pack) => isModelVisible(pack, accountId));
       const saved = localStorage.getItem("vivian-local-model");
-      const selected = packages.some((pack) => pack.models.some((model) => model.id === saved)) ? saved : packages[0]?.models[0]?.id ?? null;
+      const selection = readModelSelection(localStorage);
+      let selected = resolveStartupModel(packages, saved, selection);
       const restoreStartup = (selected: string | null) => {
         try {
           if (shouldPauseModelStartup(sessionStorage, selected)) {
@@ -331,6 +336,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       restoreStartup(selected);
       setModelPackages(packages);
       setActiveModelId(selected);
+      setModelSelectionResolved(false);
       // Render cached originals immediately; cloud latency is independent.
       if (selected) setModelsReady(true);
       const cloud = await cloudRequest;
@@ -342,27 +348,26 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       }
       setModelPackages((current) => {
         // Retain hydrated object identities so catalog sync doesn't reload GPU assets.
-        const merged = current.filter((pack) => !pack.cloudOwner || (pack.cloudOwner === accountId && cloud.models.some((model) => model.id === pack.id)));
+        const merged = current.filter((pack) => !pack.cloudOwner || pack.cloudOwner === "shared" || (pack.cloudOwner === accountId && cloud.models.some((model) => model.id === pack.id)));
         for (const model of cloud.models) if (!merged.some((pack) => pack.id === model.id)) merged.push(cloudModelPlaceholder(model));
         return merged;
       });
-      if (!selected) {
-        const remotePackages = cloud.models.map(cloudModelPlaceholder);
-        const remoteSelected = remotePackages.some((pack) => pack.models.some((model) => model.id === saved)) ? saved : remotePackages[0]?.models[0]?.id ?? null;
-        restoreStartup(remoteSelected);
-        setActiveModelId((current) => current ?? remoteSelected);
-      }
+      const allPackages = [...packages, ...cloud.models.map(cloudModelPlaceholder).filter((pack) => !packages.some((localPack) => localPack.id === pack.id))];
+      selected = resolveStartupModel(allPackages, saved, selection);
+      restoreStartup(selected);
+      setActiveModelId(selected);
+      setModelSelectionResolved(true);
     })().catch(() => {
       if (!cancelled) setModelNotice("Model storage is unavailable. Please try again.");
-    }).finally(() => { if (!cancelled) setModelsReady(true); });
+    }).finally(() => { if (!cancelled) { setModelSelectionResolved(true); setModelsReady(true); } });
     return () => { cancelled = true; cancelCloudStart?.(); controller.abort(); };
   }, [accountId]);
 
   useEffect(() => {
-    if (!modelsReady) return;
-    if (activeModelId) localStorage.setItem("vivian-local-model", activeModelId);
+    if (!modelsReady || !modelSelectionResolved) return;
+    if (activeModelId) writeModelSelection(localStorage, activeModelId);
     else localStorage.removeItem("vivian-local-model");
-  }, [modelsReady, activeModelId]);
+  }, [modelsReady, modelSelectionResolved, activeModelId]);
 
   useEffect(() => {
     setModelPreview(null);
@@ -433,6 +438,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       if (!downloaded.models.some((model) => model.id === id)) throw new Error("This model is no longer in the package. Select another model.");
       setModelPackages((current) => current.map((entry) => entry.id === pack.id ? downloaded : modelCatalogEntry(entry)));
       setActiveModelId(id);
+      writeModelSelection(localStorage, id);
       setModelNotice(null);
       setModelPaused(false);
       setModelReload((value) => value + 1);

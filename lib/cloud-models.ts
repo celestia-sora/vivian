@@ -5,6 +5,7 @@ import { MODEL_MAX_BYTES, MODEL_PART_BYTES, type CloudModel, type StorageUsage }
 import { notifyStorageChanged } from "@/lib/storage-status";
 
 export interface CloudLibrary { userId: string; models: CloudModel[]; usage: StorageUsage }
+export const SHARED_MODEL_OWNER = "shared";
 async function json<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await authFetch(path, { ...options, cache: "no-store", signal: options?.signal ?? AbortSignal.timeout(35_000) });
   const body = await response.json();
@@ -76,7 +77,7 @@ export async function uploadCloudModel(pack: ModelPackage, progress: (message: s
     throw error;
   }
 }
-export async function downloadCloudModel(model: CloudModel, userId: string, signal?: AbortSignal): Promise<ModelPackage> {
+export async function downloadCloudModel(model: CloudModel, _userId: string, signal?: AbortSignal): Promise<ModelPackage> {
   const { url, byteSize } = await json<{ url: string; byteSize: number }>(`/api/models/${model.id}`, { signal });
   if (byteSize < 1 || byteSize > MODEL_MAX_BYTES) throw new Error("Invalid model size.");
   const response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(180_000)]) : AbortSignal.timeout(180_000), cache: "no-store" });
@@ -92,7 +93,7 @@ export async function downloadCloudModel(model: CloudModel, userId: string, sign
   } finally { reader.releaseLock(); }
   if (bytes !== byteSize) throw new Error("Model download is incomplete.");
   const pack = await importModelFiles([new File(chunks, "model.zip", { type: "application/zip" })]);
-  return { ...await inspectPackage(pack.assets, model.id), cloudOwner: userId };
+  return { ...await inspectPackage(pack.assets, model.id), cloudOwner: SHARED_MODEL_OWNER };
 }
 export async function deleteCloudModel(id: string): Promise<unknown> {
   const result = await json(`/api/models/${id}`, { method: "DELETE" }); notifyStorageChanged(); return result;

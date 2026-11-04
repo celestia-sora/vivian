@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import ts from 'typescript';
 import { shouldPauseModelStartup, clearModelLoadState } from '../lib/model-startup.ts';
+import { readModelSelection, resolveStartupModel } from '../lib/local-models.ts';
 
 function storage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -10,7 +11,7 @@ function storage(initial = {}) {
 }
 const source = readFileSync(new URL('../app/companion.tsx', import.meta.url), 'utf8');
 const start = source.lastIndexOf('  useEffect(() => {', source.indexOf('    const cloudRequest ='));
-const end = source.indexOf('\n  useEffect(() => {\n    if (!modelsReady)', start);
+const end = source.lastIndexOf('  useEffect(() => {', source.indexOf('if (!modelsReady || !modelSelectionResolved)', start));
 const effect = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const pack = (id, owner) => ({ id, cloudOwner: owner, assets: [], models: [{ id: `${id}:model` }] });
@@ -25,6 +26,9 @@ function startup({ local = [pack('local')], saved = 'local:model', interrupted =
     modelCloudRequestRef: { current: null }, accountId: 'account',
     localStorage: storage({ 'vivian-local-model': saved }), sessionStorage: storage(interrupted),
     shouldPauseModelStartup,
+    isModelVisible: (pack, accountId) => !pack.cloudOwner || pack.cloudOwner === accountId || pack.cloudOwner === 'shared',
+    readModelSelection, resolveStartupModel,
+    setModelSelectionResolved: (value) => { state.selectionResolved = value; },
     setModelPackages: (value) => { state.packages = typeof value === 'function' ? value(state.packages) : value; state.writes++; },
     setActiveModelId: (value) => { state.active = typeof value === 'function' ? value(state.active) : value; },
     setModelsReady: (value) => { state.ready = value; },

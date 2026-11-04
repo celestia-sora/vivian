@@ -57,20 +57,25 @@ test("JSON body limits actual streamed bytes even without Content-Length", async
   await assert.rejects(limits.storageJson(new Request("https://app.example/api/models", { method: "POST", body: "a".repeat(32769) })), (error) => error.status === 413);
 });
 
-function fixture({ failDelete = false, failReserve = false, failInventory = false, inventory = new Map() } = {}) {
-  const rows = new Map(); const calls = [];
+function fixture({ failDelete = false, failReserve = false, failInventory = false, inventory = new Map(), legacyShared = false, env = {} } = {}) {
+  const rows = new Map(); const calls = []; const audits = [];
   let observed = { live2d_bytes: 0, other_bytes: 0 };
   const db = { rpc: async (name, args) => { assert.equal(name, "vivian_storage_observe"); observed = args; return {error:null}; }, from(table) {
-    const filters = []; let action = "select", payload;
+    const filters = []; const keys = []; let action = "select", payload;
     const q = {
       select() { return q; }, insert(value) { action = "insert"; payload = value; return q; }, update(value) { action = "update"; payload = value; return q; }, delete() { action = "delete"; return q; },
-      eq(key, value) { filters.push((row) => row[key] === value); return q; }, in(key, values) { filters.push((row) => values.includes(row[key])); return q; }, order() { return q; }, range() { return q; }, limit() { return q; }, maybeSingle() { q.single = true; return q; },
+      eq(key, value) { keys.push(key); filters.push((row) => row[key] === value); return q; }, in(key, values) { keys.push(key); filters.push((row) => values.includes(row[key])); return q; }, order() { return q; }, range() { return q; }, limit() { return q; }, maybeSingle() { q.single = true; return q; },
       then(resolve, reject) {
         let result;
-        if (table === "vivian_storage_quotas") result = { data: [{ category: "live2d", used_bytes: [...rows.values()].filter((row) => row.category === "live2d").reduce((sum, row) => sum + row.byte_size, 0), limit_bytes: 8e9 }, { category: "other", used_bytes: 0, limit_bytes: 8e9 }], error: null };
+        if (table === "vivian_model_deletions") {
+          result = action === "insert" ? (audits.push(payload), { error: null }) : { data: [], error: null };
+        } else if (table === "vivian_storage_quotas") result = { data: [{ category: "live2d", used_bytes: [...rows.values()].filter((row) => row.category === "live2d").reduce((sum, row) => sum + row.byte_size, 0), limit_bytes: 8e9 }, { category: "other", used_bytes: 0, limit_bytes: 8e9 }], error: null };
         else if (action === "insert") {
-          if (failReserve || (Array.isArray(payload) ? payload : [payload]).some(row => observed.live2d_bytes + observed.other_bytes + [...rows.values()].reduce((n,r)=>n+r.byte_size,0) + (Array.isArray(payload) ? payload : [payload]).reduce((n,r)=>n+r.byte_size,0) > limits.STORAGE_BUDGET_BYTES)) result = { error: { code: "23514" } };
+          if (legacyShared && (Array.isArray(payload) ? payload : [payload]).some(row => "library_scope" in row)) result = { error: { code: "PGRST204", message: "Could not find the 'library_scope' column of 'vivian_storage_objects' in the schema cache" } };
+          else if (failReserve || (Array.isArray(payload) ? payload : [payload]).some(row => observed.live2d_bytes + observed.other_bytes + [...rows.values()].reduce((n,r)=>n+r.byte_size,0) + (Array.isArray(payload) ? payload : [payload]).reduce((n,r)=>n+r.byte_size,0) > limits.STORAGE_BUDGET_BYTES)) result = { error: { code: "23514" } };
           else { for (const row of Array.isArray(payload) ? payload : [payload]) rows.set(row.id, { state: "pending", created_at: new Date().toISOString(), ...row }); result = { error: null }; }
+        } else if (legacyShared && keys.includes("library_scope")) {
+          result = { data: null, error: { code: "PGRST204", message: "Could not find the 'library_scope' column of 'vivian_storage_objects' in the schema cache" } };
         } else {
           const found = [...rows.values()].filter((row) => filters.every((filter) => filter(row)));
           if (action === "delete") for (const row of found) rows.delete(row.id);
@@ -87,8 +92,8 @@ function fixture({ failDelete = false, failReserve = false, failInventory = fals
     completeModelUpload: async (...args) => { calls.push(["complete", ...args]); }, deleteR2Object: async (...args) => { calls.push(["delete", ...args]); if (failDelete) throw new Error("R2 outage"); },
     signModelDownload: async (key) => { calls.push(["download", key]); return "https://private-download.example/signed"; }, putR2Image: async (...args) => { calls.push(["image", ...args]); },
   };
-  const store = load("../lib/cloud-store.ts", { "@/lib/cloud-storage": limits, "@/lib/scenes": sceneContracts, "@/lib/r2": r2 });
-  return { db, rows, calls, store };
+  const store = load("../lib/cloud-store.ts", { "@/lib/cloud-storage": limits, "@/lib/scenes": sceneContracts, "@/lib/r2": r2 }, { process: { env } });
+  return { db, rows, calls, audits, store };
 }
 const upload = { byteSize: 100, manifests: [{ path: "model.model3.json", name: "Model" }] };
 test("folder archives preserve original bytes and Unicode paths; source ZIP is reused", async () => {
@@ -141,6 +146,47 @@ test("all object operations scope ownership; staged models cannot download", asy
   await f.store.cloudModelDownload(f.db, user, started.id);
   await f.store.finishCloudModel(f.db, user, started.id);
   assert.equal(f.calls.filter((call) => call[0] === "complete").length, 1);
+});
+test("ready models are readable and deletable from any verified account during the shared beta", async () => {
+  const f = fixture(); const started = await f.store.beginCloudModel(f.db, user, upload);
+  assert.equal(f.rows.get(started.id).library_scope, "shared");
+  // A staged model stays private until the upload completes.
+  assert.equal((await f.store.cloudModels(f.db, other)).models.length, 0);
+  await assert.rejects(f.store.removeCloudModel(f.db, other, started.id), (error) => error.status === 404);
+  await f.store.finishCloudModel(f.db, user, started.id);
+  assert.deepEqual((await f.store.cloudModels(f.db, other)).models.map((model) => model.id), [started.id]);
+  await f.store.cloudModelDownload(f.db, other, started.id);
+  await f.store.removeCloudModel(f.db, other, started.id);
+  assert.equal(f.rows.size, 0);
+  assert.equal(f.audits.length, 1);
+  assert.equal(f.audits[0].object_id, started.id);
+  assert.equal(f.audits[0].owner_id, user);
+  assert.equal(f.audits[0].deleted_by, other);
+  assert.equal(f.audits[0].byte_size, 100);
+});
+test("closing the shared beta hides cross-account access without rewriting rows", async () => {
+  const f = fixture({ env: { MODEL_LIBRARY_SHARED: "false" } });
+  const started = await f.store.beginCloudModel(f.db, user, upload);
+  assert.equal(f.rows.get(started.id).library_scope, undefined);
+  await f.store.finishCloudModel(f.db, user, started.id);
+  assert.equal((await f.store.cloudModels(f.db, other)).models.length, 0);
+  await assert.rejects(f.store.cloudModelDownload(f.db, other, started.id), (error) => error.status === 404);
+  await assert.rejects(f.store.removeCloudModel(f.db, other, started.id), (error) => error.status === 404);
+  // The owner keeps full access while sharing is off, and no audit row is made.
+  assert.equal((await f.store.cloudModels(f.db, user)).models.length, 1);
+  await f.store.removeCloudModel(f.db, user, started.id);
+  assert.equal(f.rows.size, 0);
+  assert.equal(f.audits.length, 0);
+});
+test("an unapplied shared migration degrades to per-account access instead of failing", async () => {
+  const f = fixture({ legacyShared: true }); const started = await f.store.beginCloudModel(f.db, user, upload);
+  assert.equal(f.rows.get(started.id).library_scope, undefined);
+  assert.equal(f.calls.filter((call) => call[0] === "start").length, 1);
+  await f.store.finishCloudModel(f.db, user, started.id);
+  assert.equal((await f.store.cloudModels(f.db, user)).models.length, 1);
+  await assert.rejects(f.store.cloudModelDownload(f.db, other, started.id), (error) => error.status === 404);
+  await f.store.removeCloudModel(f.db, user, started.id);
+  assert.equal(f.rows.size, 0);
 });
 test("failed remote deletion retains the reservation; successful cleanup releases it", async () => {
   const failed = fixture({ failDelete: true }); const first = await failed.store.beginCloudModel(failed.db, user, upload);

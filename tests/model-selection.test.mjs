@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import ts from 'typescript';
 import { startTiming, cancelTiming } from '../lib/performance.ts';
+import { writeModelSelection } from '../lib/local-models.ts';
 
 // Execute the actual selection handler with controlled React setters and I/O.
 const source = readFileSync(new URL('../app/companion.tsx', import.meta.url), 'utf8');
@@ -18,7 +19,8 @@ function fixture({ paused = true, assets = [], fail = false, same = false } = {}
   const hydrated = same ? selected : { ...selected, assets: [new Blob(['model'])] };
   const state = { paused, packages: [old, selected], active: 'old', importing: false, calls: [], reloads: 0 };
   const bindings = {
-    AbortController, startTiming, cancelTiming,
+    AbortController, startTiming, cancelTiming, writeModelSelection,
+    localStorage: { getItem: () => null, setItem() {} },
     modelSelectionAbortRef: { current: null }, modelSelectionTimingRef: { current: undefined },
     modelRenderAbortRef: { current: null }, modelLoadIdRef: { current: 0 },
     modelRef: { current: {} }, setModelStatus() {},

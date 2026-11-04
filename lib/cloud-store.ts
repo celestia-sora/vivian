@@ -5,10 +5,21 @@ import { StorageError, storageId, modelSize, modelManifests, STORAGE_LIMITS, r2O
 import { sceneThumbnailKey } from "@/lib/scenes";
 import { r2Configuration, r2Inventory, startModelUpload, signModelParts, completeModelUpload, deleteR2Object, signModelDownload, putR2Image } from "@/lib/r2";
 
-export interface StorageObject { id: string; user_id: string; category: StorageCategory; object_key: string; byte_size: number; state: "pending" | "ready" | "deleting"; upload_id: string | null; metadata: { manifests?: CloudModel["manifests"] }; created_at: string }
+export interface StorageObject { id: string; user_id: string | null; category: StorageCategory; object_key: string; byte_size: number; state: "pending" | "ready" | "deleting"; upload_id: string | null; library_scope?: "private" | "shared"; metadata: { manifests?: CloudModel["manifests"] }; created_at: string }
 function check(error: { code?: string } | null): void {
   if (error?.code === "23514") throw new StorageError("Storage quota exceeded. Delete unused files before uploading.", 409);
   if (error) throw new StorageError("Cloud storage is temporarily unavailable.", 503);
+}
+// Shared Live2D library for the beta. The column is stored per object so the
+// beta window can be closed with an env change instead of a data migration.
+export const sharedModelLibrary = (): boolean => process.env.MODEL_LIBRARY_SHARED !== "false";
+// Deployment can briefly run ahead of the shared-library migration. Treat only
+// the specific missing column/table failures as "feature not available yet" so
+// real outages and quota errors keep surfacing.
+function missingSharedSupport(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  if (error.code === "42703" || error.code === "42P01" || error.code === "PGRST204") return true;
+  return typeof error.message === "string" && /library_scope|vivian_model_deletions/i.test(error.message);
 }
 export async function storageUsage(db: SupabaseClient): Promise<StorageUsage> {
   const { data, error } = await db.from("vivian_storage_quotas").select("category,used_bytes,external_bytes,limit_bytes"); check(error);
@@ -48,11 +59,32 @@ export async function ownedObject(db: SupabaseClient, userId: string, id: string
   if (!data) throw new StorageError("File not found.", 404);
   return data as StorageObject;
 }
+/** A model the account may read: its own, or a ready shared model during beta. */
+export async function readableModel(db: SupabaseClient, userId: string, id: string): Promise<StorageObject> {
+  storageId(id);
+  const { data, error } = await db.from("vivian_storage_objects").select("*").eq("id", id).maybeSingle(); check(error);
+  const row = data as StorageObject | null;
+  if (!row || row.category !== "live2d") throw new StorageError("Model not found.", 404);
+  if (row.user_id === userId) return row;
+  if (row.state === "ready" && row.library_scope === "shared" && sharedModelLibrary()) return row;
+  throw new StorageError("Model not found.", 404);
+}
 function present(row: StorageObject): CloudModel { return { id: row.id, byteSize: Number(row.byte_size), manifests: modelManifests(row.metadata.manifests) }; }
 export async function cloudModels(db: SupabaseClient, userId: string) {
   r2Configuration();
-  const { data, error } = await db.from("vivian_storage_objects").select("*").eq("user_id", userId).eq("category", "live2d").eq("state", "ready").order("created_at", { ascending: true }); check(error);
-  return { userId, models: (data ?? []).map((row) => present(row as StorageObject)), usage: await storageUsage(db) };
+  const own = await db.from("vivian_storage_objects").select("*").eq("user_id", userId).eq("category", "live2d").eq("state", "ready").order("created_at", { ascending: true }); check(own.error);
+  const rows = (own.data ?? []) as StorageObject[];
+  if (sharedModelLibrary()) {
+    // Readable by every verified account; own rows are kept from the first
+    // query so an owner still sees a model that is not shared.
+    const shared = await db.from("vivian_storage_objects").select("*").eq("category", "live2d").eq("state", "ready").eq("library_scope", "shared").order("created_at", { ascending: true });
+    if (!shared.error) {
+      const seen = new Set(rows.map((row) => row.id));
+      for (const row of (shared.data ?? []) as StorageObject[]) if (!seen.has(row.id)) { seen.add(row.id); rows.push(row); }
+    } else if (!missingSharedSupport(shared.error)) check(shared.error);
+  }
+  rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  return { userId, models: rows.map(present), usage: await storageUsage(db) };
 }
 export async function beginCloudModel(db: SupabaseClient, userId: string, input: unknown) {
   r2Configuration();
@@ -62,7 +94,11 @@ export async function beginCloudModel(db: SupabaseClient, userId: string, input:
   const id = randomUUID(), key = `live2d/${userId}/${id}.zip`;
   await refreshR2Accounting(db);
   // Reserve before making any remote write. SQL enforces the global budget.
-  const { error } = await db.from("vivian_storage_objects").insert({ id, user_id: userId, category: "live2d", object_key: key, byte_size: bytes, metadata: { manifests } }); check(error);
+  const reservation = { id, user_id: userId, category: "live2d", object_key: key, byte_size: bytes, metadata: { manifests } };
+  const shared = sharedModelLibrary() ? { ...reservation, library_scope: "shared" } : reservation;
+  let error = (await db.from("vivian_storage_objects").insert(shared)).error;
+  if (error && sharedModelLibrary() && missingSharedSupport(error)) error = (await db.from("vivian_storage_objects").insert(reservation)).error;
+  check(error);
   const uploadId = await startModelUpload(key);
   check((await db.from("vivian_storage_objects").update({ upload_id: uploadId }).eq("id", id).eq("user_id", userId).eq("state", "pending")).error);
   return { id, userId, usage: await storageUsage(db) };
@@ -85,9 +121,28 @@ export async function finishCloudModel(db: SupabaseClient, userId: string, id: s
   return { model: present(row), usage: await storageUsage(db) };
 }
 export async function cloudModelDownload(db: SupabaseClient, userId: string, id: string) {
-  const row = await ownedObject(db, userId, id);
+  const row = await readableModel(db, userId, id);
   if (row.category !== "live2d" || row.state !== "ready") throw new StorageError("Model not found.", 404);
   return { url: await signModelDownload(row.object_key), byteSize: Number(row.byte_size) };
+}
+async function auditModelDeletion(db: SupabaseClient, row: StorageObject, deletedBy: string): Promise<void> {
+  // Best effort: the remote object is already gone, so an audit hiccup must not
+  // resurrect it. The row records who removed a shared model and from whom.
+  const { error } = await db.from("vivian_model_deletions").insert({
+    object_id: row.id, object_key: row.object_key, owner_id: row.user_id,
+    deleted_by: deletedBy, byte_size: Number(row.byte_size),
+  });
+  if (error && !missingSharedSupport(error)) console.warn("Model deletion audit failed:", error.message);
+}
+/** Delete a model the account can read, including a shared model it does not own. */
+export async function removeCloudModel(db: SupabaseClient, userId: string, id: string): Promise<void> {
+  const row = await readableModel(db, userId, id);
+  const shared = row.user_id !== userId;
+  check((await db.from("vivian_storage_objects").update({ state: "deleting" }).eq("id", id)).error);
+  await deleteR2Object(row.object_key, row.upload_id);
+  // Only verified remote deletion releases the reservation. Failures keep it.
+  check((await db.from("vivian_storage_objects").delete().eq("id", id).eq("state", "deleting")).error);
+  if (shared) await auditModelDeletion(db, row, userId);
 }
 export async function removeCloudObject(db: SupabaseClient, userId: string, id: string): Promise<void> {
   const row = await ownedObject(db, userId, id);

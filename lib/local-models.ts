@@ -13,6 +13,31 @@ export interface LocalModel {
   previewPath?: string;
 }
 export interface ModelPackage { id: string; assets: ModelAsset[]; models: LocalModel[]; cloudOwner?: string; renderRevision?: string }
+export interface ModelSelectionRecord { modelId: string; lastSelectedAt: number; revision: number }
+
+/** Resolve a saved selection against the packages available in this startup snapshot. */
+export function resolveStartupModel(packages: ModelPackage[], savedId: string | null, selection: ModelSelectionRecord | null): string | null {
+  const available = new Set(packages.flatMap((pack) => pack.models.map((model) => model.id)));
+  if (selection && available.has(selection.modelId)) return selection.modelId;
+  if (savedId && available.has(savedId)) return savedId;
+  return packages.flatMap((pack) => pack.models).at(-1)?.id ?? null;
+}
+export function readModelSelection(storage: Pick<Storage, "getItem">): ModelSelectionRecord | null {
+  try {
+    const raw = storage.getItem("vivian-model-selection");
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<ModelSelectionRecord>;
+    return typeof value.modelId === "string" && Number.isFinite(value.lastSelectedAt) && Number.isSafeInteger(value.revision)
+      ? value as ModelSelectionRecord : null;
+  } catch { return null; }
+}
+export function writeModelSelection(storage: Pick<Storage, "getItem" | "setItem">, modelId: string): ModelSelectionRecord {
+  const prior = readModelSelection(storage);
+  const record = { modelId, lastSelectedAt: Date.now(), revision: (prior?.revision ?? 0) + 1 };
+  storage.setItem("vivian-model-selection", JSON.stringify(record));
+  storage.setItem("vivian-local-model", modelId);
+  return record;
+}
 export interface CubismManifest {
   Version: number;
   FileReferences: {
