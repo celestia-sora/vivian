@@ -29,7 +29,9 @@ import type { SceneDecision } from "@/lib/scenes";
 import { useMotionValue } from "motion/react";
 import SiriOrb from "@/components/ui/smoothui/siri-orb";
 import AnimatedFileUpload from "@/components/ui/smoothui/animated-file-upload";
+import CoverflowCarousel, { type CoverflowCarouselItem } from "@/components/ui/smoothui/coverflow-carousel";
 import type { AIState } from "@/components/ui/smoothui/ai-core";
+import PagePreloader from "@/components/ui/smoothui/page-preloader";
 
 async function availableModelPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal?: AbortSignal): Promise<ModelPackage | undefined> {
   return singleFlightModel(pack.id, (sharedSignal) => hydrateModelPackage(pack, {
@@ -252,7 +254,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const modelPreloadAbortRef = useRef<AbortController | null>(null);
   const cloudLibraryRef = useRef<CloudLibrary | null>(null);
   cloudLibraryRef.current = cloudLibrary;
-  const [modelPreview, setModelPreview] = useState<string | null>(null);
+  const [modelPreviews, setModelPreviews] = useState<Record<string, string>>({});
+  const modelPreviewUrlsRef = useRef(new Map<string, { path: string; url: string }>());
   const [textureQuality, setTextureQuality] = useState<"auto" | "original">("auto");
   const [modelReload, setModelReload] = useState(0);
   const [graphicsLost, setGraphicsLost] = useState(false);
@@ -263,6 +266,14 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const modelFolderRef = useRef<HTMLInputElement>(null);
   const activePackage = modelPackages.find((pack) => pack.models.some((model) => model.id === activeModelId));
   const activeModel = activePackage?.models.find((model) => model.id === activeModelId);
+  const modelCarouselEntries = modelPackages.flatMap((pack) => pack.models.map((model) => ({ pack, model })));
+  const modelCarouselIndex = Math.max(0, modelCarouselEntries.findIndex(({ model }) => model.id === activeModelId));
+  const modelCarouselItems: CoverflowCarouselItem[] = modelCarouselEntries.map(({ pack, model }) => ({
+    id: model.id,
+    image: modelPreviews[model.id],
+    alt: `${model.name} profile`,
+    content: <span className="grid gap-1"><strong className="text-base">{model.name}</strong><small className="text-white/75">{cloudLibrary?.models.some((entry) => entry.id === pack.id) ? "Cloud model" : "This device"}</small></span>,
+  }));
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [companion, setCompanion] = useState<CompanionState>(defaultCompanionState());
   const [customInstructions, setCustomInstructions] = useState("");
@@ -378,7 +389,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         modelPreloadAbortRef.current = preloadController;
         cancelPreload = scheduleBackgroundWork(() => {
           void preloadModelPackages(allPackages.filter((pack) => cloud.models.some((model) => model.id === pack.id)), globalSelection ?? selected,
-            (pack, signal) => availableModelPackage(pack, cloud, signal), preloadController.signal);
+            (pack, signal) => preloadPackage(pack, cloud, signal), preloadController.signal);
         }, 5000);
       }
     })().catch(() => {
@@ -414,7 +425,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           const preloadController = new AbortController();
           modelPreloadAbortRef.current = preloadController;
           void preloadModelPackages(cloud.models.map(cloudModelPlaceholder), cloud.preference?.modelId ?? null,
-            (pack, signal) => availableModelPackage(pack, cloud, signal), preloadController.signal);
+            (pack, signal) => preloadPackage(pack, cloud, signal), preloadController.signal);
           // Deliberately do not change activeModelId here; other tabs pick this on reload.
         })();
       }, 400);
@@ -427,15 +438,49 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     };
   }, [accountId]);
 
-  useEffect(() => {
-    setModelPreview(null);
-    if (!activeModel?.previewPath || !activePackage) return;
-    const image = activePackage.assets.find((asset) => asset.path === activeModel.previewPath);
-    if (!image) return;
-    const url = URL.createObjectURL(image.blob);
-    setModelPreview(url);
-    return () => URL.revokeObjectURL(url);
-  }, [activeModel, activePackage]);
+  function cacheModelPreviews(pack: ModelPackage) {
+    const updates: Record<string, string> = {};
+    for (const model of pack.models) {
+      if (!model.previewPath) continue;
+      const current = modelPreviewUrlsRef.current.get(model.id);
+      if (current?.path === model.previewPath) continue;
+      const asset = pack.assets.find((entry) => entry.path === model.previewPath);
+      if (!asset) continue;
+      if (current) URL.revokeObjectURL(current.url);
+      const url = URL.createObjectURL(asset.blob);
+      modelPreviewUrlsRef.current.set(model.id, { path: model.previewPath, url });
+      updates[model.id] = url;
+    }
+    if (Object.keys(updates).length) setModelPreviews((current) => ({ ...current, ...updates }));
+  }
+
+  function releaseModelPreviews(packageId: string) {
+    const removedIds: string[] = [];
+    for (const [modelId, preview] of modelPreviewUrlsRef.current) {
+      if (!modelId.startsWith(`${packageId}:`)) continue;
+      URL.revokeObjectURL(preview.url);
+      modelPreviewUrlsRef.current.delete(modelId);
+      removedIds.push(modelId);
+    }
+    if (removedIds.length) setModelPreviews((current) => {
+      const next = { ...current };
+      for (const modelId of removedIds) delete next[modelId];
+      return next;
+    });
+  }
+
+  useEffect(() => () => {
+    for (const preview of modelPreviewUrlsRef.current.values()) URL.revokeObjectURL(preview.url);
+    modelPreviewUrlsRef.current.clear();
+  }, []);
+
+  function preloadPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal: AbortSignal) {
+    return availableModelPackage(pack, cloud, signal).then((loaded) => {
+      signal.throwIfAborted();
+      if (loaded) cacheModelPreviews(loaded);
+      return loaded;
+    });
+  }
 
   async function importModels(files: File[]) {
     if (modelImporting || !files.length) return;
@@ -496,6 +541,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       abort.signal.throwIfAborted();
       if (!downloaded) throw new Error("Model files are unavailable.");
       if (!downloaded.models.some((model) => model.id === id)) throw new Error("This model is no longer in the package. Select another model.");
+      cacheModelPreviews(downloaded);
       setModelPackages((current) => current.map((entry) => entry.id === pack.id ? downloaded : modelCatalogEntry(entry)));
       setActiveModelId(id);
       writeModelSelection(localStorage, id);
@@ -521,6 +567,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         void getCloudModels().then(setCloudLibrary).catch(() => {});
       }
       await removeModelPackage(activePackage.id);
+      releaseModelPreviews(activePackage.id);
       const remaining = modelPackages.filter((pack) => pack.id !== activePackage.id);
       setModelPackages(remaining);
       setActiveModelId(remaining[0]?.models[0]?.id ?? null);
@@ -763,6 +810,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         const renderPackage = await availableModelPackage(activePackage, cloudLibraryRef.current ?? modelCloudRequestRef.current, textureAbort.signal);
         textureAbort.signal.throwIfAborted();
         if (!renderPackage) throw new Error("Model files are unavailable on this device. Download the cloud copy or import the original model again.");
+        cacheModelPreviews(renderPackage);
         if (renderPackage !== activePackage) {
           // Replace stale Blob handles in React too; otherwise every quality
           // change would try the broken in-memory copy and download again.
@@ -864,30 +912,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         window.dispatchEvent(new Event("vivian-model-first-frame"));
         setModelStatus("ready");
         clearRecovery();
-        if (!activeModel.previewPath) {
-          // Let the first frame paint before extracting a renderer thumbnail.
-          window.setTimeout(() => {
-            if (modelRef.current !== model || disposed) return;
-            try {
-              app.renderer.render(app.stage);
-              // Read the rendered framebuffer: extracting the model as a render
-              // texture resets its transform and makes Cubism previews too small.
-              const snapshot = app.renderer.plugins.extract.canvas() as HTMLCanvasElement;
-              const visibleBounds = model.getBounds();
-              const pixelRatio = snapshot.width / app.renderer.screen.width;
-              const left = Math.max(0, visibleBounds.x * pixelRatio);
-              const top = Math.max(0, visibleBounds.y * pixelRatio);
-              const width = Math.max(1, Math.min(snapshot.width - left, visibleBounds.width * pixelRatio));
-              const height = Math.max(1, Math.min(snapshot.height - top, visibleBounds.height * pixelRatio));
-              const thumbnail = document.createElement("canvas");
-              const previewScale = Math.min(256 / width, 256 / height);
-              thumbnail.width = Math.max(1, Math.round(width * previewScale));
-              thumbnail.height = Math.max(1, Math.round(height * previewScale));
-              thumbnail.getContext("2d")?.drawImage(snapshot, left, top, width, height, 0, 0, thumbnail.width, thumbnail.height);
-              setModelPreview(thumbnail.toDataURL("image/png"));
-            } catch { /* Preview failure does not prevent the model from loading. */ }
-          }, 0);
-        }
         window.addEventListener("resize", queueResize);
         window.addEventListener("orientationchange", handleOrientationChange);
         window.visualViewport?.addEventListener("resize", queueResize);
@@ -2008,7 +2032,17 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
 
+  // Show Vivian preloader while Live2D model is loading
+  const live2dLoading = !!activeModelId && modelStatus !== "ready";
+
   return <main className="companion-shell">
+    <PagePreloader
+      active={live2dLoading}
+      variant="words"
+      background="bg-black/90 backdrop-blur-sm"
+      words={["รอฉันแป๊บนึงนะคะ...", "วิเวียนกำลังเตรียมตัวให้สวยอยู่", "อย่าไปไหนนะ... ฉันจะมา", "แค่เธอคนเดียว รอได้ใช่ไหมคะ", "เกือบพร้อมแล้วค่ะ"]}
+      onComplete={() => {}}
+    />
     <section className={`companion-stage ${MODEL_CONFIG[selectedModel].background} ${!sending && !recording ? "is-idle" : ""}`} aria-label="Vivian companion">
       <SceneBackground source={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.imageUrl ?? BACKGROUNDS[selectedPreset]} preview={sceneLibrary.scenes.find((scene) => scene.id === activeCustomSceneId)?.thumbnailUrl} timing={sceneLibrary.selectionTiming} />
       <canvas className="live2d-canvas" ref={canvasRef} />
@@ -2137,12 +2171,20 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
             {panel === "character" && <>
               <div className="floating-tabs">{(["outfit", "expression", "pose"] as const).map((tab) => <button key={tab} type="button" className={characterTab === tab ? "is-selected" : ""} onClick={() => setCharacterTab(tab)}>{tab === "outfit" ? "Models" : tab}</button>)}</div>
               {characterTab === "outfit" && <>
-                <div className="character-preview">
-                  {modelPreview ? <img className="model-preview-image" src={modelPreview} alt={`${activeModel?.name ?? "Model"} preview`} /> : <span className="character-preview-mark">V</span>}
-                  <strong>{activeModel?.name ?? "Your character awaits"}</strong>
-                  <small>{modelStatus === "loading" ? "Loading model…" : modelStatus === "ready" ? `${activeModel?.expressions.length ?? 0} expressions · ${activeModel?.motions.length ?? 0} motions` : "Import your Live2D model"}</small>
-                </div>
-                {modelPackages.length > 0 && <label className="model-select-label">Model<select value={activeModelId ?? ""} disabled={modelImporting} onChange={(event) => { void chooseModel(event.target.value); }}>{modelPackages.flatMap((pack) => pack.models.map((model) => <option key={model.id} value={model.id}>{model.name}{cloudLibrary?.models.some((entry) => entry.id === pack.id) ? " · Cloud" : " · This device"}</option>))}</select></label>}
+                {modelCarouselItems.length > 0 ? <CoverflowCarousel
+                  ariaLabel="Live2D models"
+                  className={modelImporting ? "pointer-events-none opacity-60" : "character-model-carousel"}
+                  depth={90}
+                  index={modelCarouselIndex}
+                  items={modelCarouselItems}
+                  onIndexChange={(index) => {
+                    const entry = modelCarouselEntries[index];
+                    if (entry && entry.model.id !== activeModelId) void chooseModel(entry.model.id);
+                  }}
+                  rotation={32}
+                  spacing={155}
+                /> : <div className="character-preview character-preview-empty"><strong>Your character awaits</strong><small>Import a Live2D model to begin.</small></div>}
+                {activeModel && <p className="floating-note model-carousel-status" role="status">{modelStatus === "loading" ? "Loading model…" : modelStatus === "ready" ? `${activeModel.expressions.length} expressions · ${activeModel.motions.length} motions` : "Model not loaded"}</p>}
                 {activeModel && <label className="model-select-label">Texture quality<select value={textureQuality} onChange={(event) => { setModelNotice(null); setTextureQuality(event.target.value as "auto" | "original"); }}><option value="auto">Auto · fit this device</option><option value="original">Original textures</option></select></label>}
                 {activeModel && <button type="button" className="floating-option" disabled={modelStatus === "loading" || graphicsLost || modelImporting} onClick={() => { void (async () => { setModelNotice(null); if (modelPaused) { setTextureQuality("auto"); await chooseModel(activeModel.id); } setModelPaused(false); setModelReload((value) => value + 1); })(); }}>Reload model</button>}
                 {textureSummary && <p className="floating-note">{textureSummary}. Original files stay unchanged.</p>}
