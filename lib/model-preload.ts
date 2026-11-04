@@ -48,22 +48,33 @@ export function singleFlightModel<T>(
   });
 }
 
-/** Warm the latest selected package first, then the newest cloud packages serially. */
+/**
+ * Prioritize the selected model package so it is immediately usable.
+ * Other packages are loaded lazily in the background with a delay.
+ */
 export async function preloadModelPackages(
   packages: ModelPackage[], selectedModelId: string | null,
   load: (pack: ModelPackage, signal: AbortSignal) => Promise<unknown>, signal: AbortSignal,
 ): Promise<void> {
-  const ordered = packages.map((pack, index) => ({ pack, index })).sort((a, b) => {
-    const selectedA = a.pack.models.some((model) => model.id === selectedModelId);
-    const selectedB = b.pack.models.some((model) => model.id === selectedModelId);
-    if (selectedA !== selectedB) return selectedA ? -1 : 1;
-    return b.index - a.index;
-  }).map(({ pack }) => pack);
-  for (const pack of ordered) {
+  const selectedPack = packages.find((pack) => pack.models.some((model) => model.id === selectedModelId));
+  const otherPacks = packages.filter((pack) => pack !== selectedPack);
+
+  // 1. Preload only the active/selected model package first and await it
+  if (selectedPack) {
+    signal.throwIfAborted();
+    await load(selectedPack, signal).catch((error: unknown) => {
+      if (signal.aborted) throw error;
+    });
+  }
+
+  // 2. Lazily preload the remaining packages one by one with a small yield/delay
+  for (const pack of otherPacks) {
+    signal.throwIfAborted();
+    // Yield to let UI and Live2D rendering run smoothly before fetching another model
+    await new Promise((resolve) => setTimeout(resolve, 1500));
     signal.throwIfAborted();
     await load(pack, signal).catch((error: unknown) => {
       if (signal.aborted) throw error;
-      // One unavailable package must not block the rest of the shared library.
     });
   }
 }
