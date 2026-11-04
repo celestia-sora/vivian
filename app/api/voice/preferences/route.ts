@@ -9,6 +9,12 @@ import {
 
 const headers = { "Cache-Control": "private, no-store" };
 const columns = "speaking_speed,speech_language";
+const legacyColumns = "speaking_speed";
+// Deployment can briefly run ahead of the speech_language migration. Detect
+// that specific failure so speed keeps working and the client keeps its cached
+// language instead of being reset to the Thai default.
+const missingLanguageColumn = (message: unknown) => typeof message === "string" && /speech_language/i.test(message);
+
 async function preferences(request: Request, write: boolean): Promise<Response> {
   const denied = await requireApiAccess(request);
   if (denied) return denied;
@@ -32,20 +38,32 @@ async function preferences(request: Request, write: boolean): Promise<Response> 
   try {
     const db = getSupabaseAdmin(AbortSignal.timeout(8000));
     // One fixed singleton for all authorized accounts; never accept a user key.
-    const row = {
+    const row: Record<string, unknown> = {
       id: "global",
       ...(speed === undefined ? {} : { speaking_speed: speed }),
       ...(language === undefined ? {} : { speech_language: language }),
       updated_at: new Date().toISOString(),
     };
-    const result = write
+    let missingLanguage = false;
+    let result = write
       ? await db.from("vivian_voice_preferences").upsert(row, { onConflict: "id" }).select(columns).single()
       : await db.from("vivian_voice_preferences").select(columns).eq("id", "global").maybeSingle();
+    if (result.error && missingLanguageColumn(result.error.message)) {
+      missingLanguage = true;
+      const legacyRow = { ...row };
+      delete legacyRow.speech_language;
+      result = write
+        ? await db.from("vivian_voice_preferences").upsert(legacyRow, { onConflict: "id" }).select(legacyColumns).single()
+        : await db.from("vivian_voice_preferences").select(legacyColumns).eq("id", "global").maybeSingle();
+    }
     if (result.error) throw new Error("Voice preference storage unavailable");
-    return Response.json({
+    const payload: { speakingSpeed: number; speechLanguage?: string } = {
       speakingSpeed: result.data?.speaking_speed ?? DEFAULT_SPEAKING_SPEED,
-      speechLanguage: validSpeechLanguage(result.data?.speech_language) ? result.data.speech_language : DEFAULT_SPEECH_LANGUAGE,
-    }, { headers });
+    };
+    if (!missingLanguage) {
+      payload.speechLanguage = validSpeechLanguage(result.data?.speech_language) ? result.data.speech_language : DEFAULT_SPEECH_LANGUAGE;
+    }
+    return Response.json(payload, { headers });
   } catch {
     return Response.json({ error: "บันทึกค่าภาษาและความเร็วบนคลาวด์ไม่ได้ กรุณาลองใหม่" }, { status: 503, headers });
   }

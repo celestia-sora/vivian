@@ -8,7 +8,7 @@ const source = ts.transpileModule(readFileSync(new URL("../app/api/voice/prefere
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 let stored;
-function handler(denied = null, unavailable = false) {
+function handler(denied = null, unavailable = false, legacy = false) {
   const exports = {};
   runInNewContext(source, { exports, Response, Error, Date, AbortSignal, require(name) {
     if (name === "@/lib/auth/server") return { requireApiAccess: async () => denied };
@@ -17,18 +17,26 @@ function handler(denied = null, unavailable = false) {
       if (unavailable) throw new Error();
       return { from(table) {
         assert.equal(table, "vivian_voice_preferences");
-        let write;
+        let candidate;
+        let selected;
         const query = {
           upsert(row, options) {
             assert.equal(row.id, "global");
             assert.equal(options.onConflict, "id");
-            write = { ...stored, ...row };
+            candidate = { ...stored, ...row };
             return query;
           },
-          select(columns) { assert.equal(columns, "speaking_speed,speech_language"); return query; },
+          select(columns) { assert.ok(["speaking_speed,speech_language", "speaking_speed"].includes(columns)); selected = columns; return query; },
           eq(column, key) { assert.equal(column, "id"); assert.equal(key, "global"); return query; },
-          async single() { stored = write; return { data: stored, error: null }; },
-          async maybeSingle() { return { data: stored ?? null, error: null }; },
+          async single() {
+            if (legacy && selected.includes("speech_language")) return { data: null, error: { message: "column vivian_voice_preferences.speech_language does not exist" } };
+            stored = candidate;
+            return { data: stored, error: null };
+          },
+          async maybeSingle() {
+            if (legacy && selected.includes("speech_language")) return { data: null, error: { message: "Could not find the 'speech_language' column of 'vivian_voice_preferences' in the schema cache" } };
+            return { data: stored ?? null, error: null };
+          },
         }; return query;
       } };
     } };
@@ -70,6 +78,19 @@ test("invalid speed or language cannot overwrite the global value", async () => 
     assert.equal((await handler().PATCH(request(body))).status, 400);
   }
   assert.deepEqual(stored, { speaking_speed: 1.06, speech_language: "en" });
+});
+test("before the language migration runs, speed still works and language stays local", async () => {
+  stored = { speaking_speed: 1.04 };
+  const read = await (await handler(null, false, true).GET(new Request("https://vivian.example"))).json();
+  assert.equal(read.speakingSpeed, 1.04);
+  // No speechLanguage key: the client keeps its cached choice instead of being
+  // reset to the Thai default on the next refresh.
+  assert.equal("speechLanguage" in read, false);
+  const saved = await (await handler(null, false, true).PATCH(request({ speakingSpeed: 1.08, speechLanguage: "en" }))).json();
+  assert.equal(saved.speakingSpeed, 1.08);
+  assert.equal("speechLanguage" in saved, false);
+  assert.equal(stored.speaking_speed, 1.08);
+  assert.equal(stored.speech_language, undefined);
 });
 test("unauthorized callers cannot read or write; cloud failure is explicit", async () => {
   const denied = Response.json({}, { status: 403 });
