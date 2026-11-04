@@ -255,6 +255,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const cloudLibraryRef = useRef<CloudLibrary | null>(null);
   cloudLibraryRef.current = cloudLibrary;
   const [modelPreviews, setModelPreviews] = useState<Record<string, string>>({});
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
   const modelPreviewUrlsRef = useRef(new Map<string, { path: string; url: string }>());
   const [textureQuality, setTextureQuality] = useState<"auto" | "original">("auto");
   const [modelReload, setModelReload] = useState(0);
@@ -267,7 +268,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const activePackage = modelPackages.find((pack) => pack.models.some((model) => model.id === activeModelId));
   const activeModel = activePackage?.models.find((model) => model.id === activeModelId);
   const modelCarouselEntries = modelPackages.flatMap((pack) => pack.models.map((model) => ({ pack, model })));
-  const modelCarouselIndex = Math.max(0, modelCarouselEntries.findIndex(({ model }) => model.id === activeModelId));
+  const modelCarouselIndex = Math.max(0, modelCarouselEntries.findIndex(({ model }) => model.id === (pendingModelId ?? activeModelId)));
   const modelCarouselItems: CoverflowCarouselItem[] = modelCarouselEntries.map(({ pack, model }) => ({
     id: model.id,
     image: modelPreviews[model.id],
@@ -403,6 +404,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     if (activeModelId) writeModelSelection(localStorage, activeModelId);
     else localStorage.removeItem("vivian-local-model");
   }, [modelsReady, modelSelectionResolved, activeModelId]);
+
+  useEffect(() => {
+    if (pendingModelId && pendingModelId === activeModelId) setPendingModelId(null);
+  }, [activeModelId, pendingModelId]);
 
   useEffect(() => {
     let disposed = false;
@@ -551,6 +556,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       setModelReload((value) => value + 1);
     } catch (error) {
       if (abort.signal.aborted) return;
+      setPendingModelId(null);
       cancelTiming(modelSelectionTimingRef.current);
       setModelStatus(modelRef.current ? "ready" : "error");
       setModelNotice(error instanceof Error ? error.message : "Could not load model.");
@@ -2179,7 +2185,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                   items={modelCarouselItems}
                   onIndexChange={(index) => {
                     const entry = modelCarouselEntries[index];
-                    if (entry && entry.model.id !== activeModelId) void chooseModel(entry.model.id);
+                    if (entry && entry.model.id !== activeModelId) {
+                      setPendingModelId(entry.model.id);
+                      void chooseModel(entry.model.id);
+                    }
                   }}
                   rotation={32}
                   spacing={155}
