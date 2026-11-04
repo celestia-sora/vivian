@@ -83,7 +83,19 @@ export function SceneManager({ library }: { library: SceneLibrary }) {
     <p className="floating-note">Your labels tell Vivian what each scene means. Scenes switch immediately; a preview appears while the full image loads.</p>
     {library.notice && <div role="alert" className="model-notice">{library.notice}{!library.ready && <button type="button" className="floating-option" onClick={() => void library.refresh().catch((error: Error) => library.setNotice(error.message))}>Retry loading scenes</button>}</div>}
     {success && <p role="status" className="floating-note">{success}</p>}
-    {!editor && <button type="button" className="floating-option scene-upload" disabled={!library.ready || working || library.scenes.length >= SCENE_MAX_COUNT} onClick={() => open()}>+ Add Scene</button>}
+    {!editor && library.scenes.length < SCENE_MAX_COUNT && <AnimatedFileUpload
+      accept={SCENE_MIME_TYPES.join(",")}
+      className="vivian-upload scene-upload"
+      disabled={!library.ready || working}
+      maxSize={SCENE_MAX_BYTES}
+      multiple={false}
+      onFilesSelected={(files) => {
+        const image = files[0];
+        if (!image) return;
+        open();
+        chooseFile(image);
+      }}
+    />}
     {editor && <form className="scene-editor" aria-label={editor.scene ? "Edit Scene" : "Add Scene"} onSubmit={(event) => void save(event)}>
       <h3>{editor.scene ? editor.replace ? "Replace Image" : "Edit Label" : "Add Scene"}</h3>
       <label>Scene label<input ref={labelInput} value={label} maxLength={100} required placeholder="ห้องนอนตอนกลางคืน" onChange={(event) => setLabel(event.target.value)} disabled={working}/></label>
