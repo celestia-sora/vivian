@@ -2243,7 +2243,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
               <button type="button" className="floating-option" onClick={() => setMuted((value) => !value)}>
                 <Icon name="sound" size={18}/> Vivian voice <strong>{muted ? "Off" : "On"}</strong>
               </button>
-              <div className="custom-instructions">
+              <div className="custom-instructions voice-id-preferences">
                 <strong>11Labs Voice ID</strong>
                 <p>Voice ID ที่ใช้งานอยู่ตอนนี้ (Global): <code style={{ color: "#e9b1d2", background: "#ffffff1a", padding: "2px 6px", borderRadius: "4px" }}>{voiceId || "Default (System)"}</code></p>
                 <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
