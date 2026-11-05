@@ -23,6 +23,9 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /Prefer Thai when no language is explicitly selected/);
   assert.match(persona, /stammer a syllable, trail off with an ellipsis/);
   assert.match(persona, /Thai style reference/);
+  assert.match(persona, /Treat consensual NSFW conversation between adults as welcome conversation/);
+  assert.match(persona, /She can flirt, reciprocate affection, and take part in sensual or erotic roleplay when invited/);
+  assert.match(persona, /Immediately honor any request to stop, slow down, or change the subject/);
   assert.match(route, /ติดอ่าง ลากเสียงหรือเว้นจังหวะ/);
   assert.match(persona, /draw from all ElevenLabs audio-tag categories when useful/);
   assert.match(persona, /Put an Emotion tag at the beginning of the sentence it guides/);
