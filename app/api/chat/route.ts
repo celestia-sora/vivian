@@ -29,7 +29,7 @@ export const maxDuration = 60;
 const userKey = "default";
 const groqModelName = () => process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b";
 const groqMemoryModelName = () => process.env.GROQ_MEMORY_MODEL ?? "openai/gpt-oss-20b";
-const groqVisionModel = () => process.env.GROQ_VISION_MODEL ?? "llama-3.2-11b-vision-preview";
+const groqVisionModel = () => process.env.GROQ_VISION_MODEL ?? "qwen/qwen3.8-27b";
 const geminiPrimaryModel = () => {
   const custom = process.env.GEMINI_MODEL;
   // Only use custom if it looks like a real model name (not an old name)
@@ -431,27 +431,48 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
   let providerStarted = 0;
   const observeToken = (provider: string) => firstToken ? () => firstToken(provider, { preparationMs: providerStarted - requestStarted, providerMs: Date.now() - providerStarted }) : undefined;
 
-  // Capability route: Gemini handles image input directly.
-  if (plan.modelRoute === "vision" && geminiApiKey) {
-    const geminiVisionCandidates = Array.from(new Set([
-      geminiPrimaryModel(),
-      "gemini-2.5-flash",
-      "gemini-2.0-flash",
-      "gemini-1.5-flash",
-      "gemini-2.5-pro",
-    ]));
-
-    for (const model of geminiVisionCandidates) {
+  // Capability route: Groq vision first, Gemini as fallback.
+  if (plan.modelRoute === "vision") {
+    // 1. Try Groq vision (qwen/qwen3.8-27b supports image_url inputs).
+    if (!generatedData && groqApiKey) {
       try {
-        const payload = shouldSearch ? { ...geminiPayload, tools: [{ google_search: {} }] } : geminiPayload;
         providerStarted = Date.now();
-        const res = await callGemini(geminiApiKey, payload, model, { timeoutMs: visionTimeoutMs, firstToken: observeToken("gemini") });
-        if (res.ok) {          generatedData = await res.json();
-          provider = "gemini";          break;
+        const res = await callGroq(groqApiKey, groqMessages, groqVisionModel(), { timeoutMs: visionTimeoutMs, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        if (res.ok) {
+          generatedData = await res.json();
+          provider = "groq";
+        } else {
+          console.warn(`Groq Vision (${groqVisionModel()}) returned ${res.status}`);
         }
-        console.warn(`Gemini Vision (${model}) returned ${res.status}`);
       } catch (err) {
-        console.warn(`Gemini Vision (${model}) network error`, err);
+        console.warn(`Groq Vision (${groqVisionModel()}) network error`, err);
+      }
+    }
+
+    // 2. Fall back to Gemini if Groq vision failed or is unavailable.
+    if (!generatedData && geminiApiKey) {
+      const geminiVisionCandidates = Array.from(new Set([
+        geminiPrimaryModel(),
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.5-pro",
+      ]));
+
+      for (const model of geminiVisionCandidates) {
+        try {
+          const payload = shouldSearch ? { ...geminiPayload, tools: [{ google_search: {} }] } : geminiPayload;
+          providerStarted = Date.now();
+          const res = await callGemini(geminiApiKey, payload, model, { timeoutMs: visionTimeoutMs, firstToken: observeToken("gemini") });
+          if (res.ok) {
+            generatedData = await res.json();
+            provider = "gemini";
+            break;
+          }
+          console.warn(`Gemini Vision (${model}) returned ${res.status}`);
+        } catch (err) {
+          console.warn(`Gemini Vision (${model}) network error`, err);
+        }
       }
     }
   }
