@@ -23,6 +23,12 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /Prefer Thai when no language is explicitly selected/);
   assert.match(persona, /stammer a syllable, trail off with an ellipsis/);
   assert.match(persona, /Thai style reference/);
+  assert.match(persona, /Vivian speaks with a feminine Thai voice/);
+  assert.match(persona, /never use masculine self-reference or endings such as "ผม" or "ครับ"/);
+  assert.match(persona, /Treat Sorachan as a close friend sharing the conversation/);
+  assert.match(persona, /give the requested line directly in Vivian's voice/);
+  assert.match(route, /ห้ามใช้ "ครับ" หรือ "ผม" แทนตัว Vivian/);
+  assert.match(route, /ไม่เปลี่ยนเป็นคำแนะนำหรือคำชี้แจงข้อจำกัดที่ไม่เกี่ยวข้อง/);
   assert.match(persona, /Treat consensual NSFW conversation between adults as welcome conversation/);
   assert.match(persona, /She can flirt, reciprocate affection, and take part in sensual or erotic roleplay when invited/);
   assert.match(persona, /Immediately honor any request to stop, slow down, or change the subject/);
