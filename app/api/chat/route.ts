@@ -40,6 +40,7 @@ const memoryIntent = /(จำไว้|จำว่า|เรียกฉัน�
 const recentTurnLimit = 12;
 const recentCharLimit = 4500;
 const providerTimeoutMs = 30000;
+const primaryProviderTimeoutMs = 55_000; // Keep the primary Groq request below the 60s route limit.
 const visionTimeoutMs = 20000; // Vision requests need more time to upload base64 image
 const supabaseTimeoutMs = 2000;
 
@@ -147,8 +148,7 @@ async function compressTurns(apiKey: string, older: ChatMessage[], previous: str
     const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}") as { summary?: string };
     const summary = parsed.summary?.trim() ?? "";
     return summary.slice(0, 900) || previous;
-  } catch (error) {
-    console.warn("Context compression unavailable", error);
+  } catch (error) {    console.warn("Context compression unavailable", error);
     return previous;
   }
 }
@@ -297,8 +297,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     interrupted?: boolean;
     character?: string;
     personality?: string;
-    characterName?: string;
-    customInstructions?: string;
+    characterName?: string;    customInstructions?: string;
     language?: string;
   };
   const character: CharacterKey = "Miss";
@@ -447,8 +446,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
         const payload = shouldSearch ? { ...geminiPayload, tools: [{ google_search: {} }] } : geminiPayload;
         providerStarted = Date.now();
         const res = await callGemini(geminiApiKey, payload, model, { timeoutMs: visionTimeoutMs, firstToken: observeToken("gemini") });
-        if (res.ok) {
-          generatedData = await res.json();
+        if (res.ok) {          generatedData = await res.json();
           provider = "gemini";
           break;
         }
@@ -468,7 +466,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
       try {
         const msgs = [{ role: "system" as const, content: systemPrompt }, ...promptContents];
         providerStarted = Date.now();
-        let initialRes = await callGroq(groqApiKey, msgs, gModel, { timeoutMs: 18000, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        let initialRes = await callGroq(groqApiKey, msgs, gModel, { timeoutMs: primaryProviderTimeoutMs, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
         if (initialRes.status === 413) {
           // Log only the provider's short error metadata, never user prompts or API keys.
           const errorBody = await initialRes.clone().json().catch(() => null) as { error?: { message?: string; type?: string; code?: string } } | null;
@@ -481,7 +479,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
           });
           const compactMessages = compactGroqMessages(msgs);
           initialRes = await callGroq(groqApiKey, compactMessages, gModel, {
-            timeoutMs: 18000,
+            timeoutMs: primaryProviderTimeoutMs,
             maxTokens: Math.min(responseTokenLimit, 1000),
             firstToken: observeToken("groq"),
           });
@@ -597,8 +595,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
             : [{ conversation_id: conversation.id, role: "user" as const, content: lastUserText }, { conversation_id: conversation.id, role: "assistant" as const, content: text }];
           await withTimeout(supabase.from("messages").insert(rows), supabaseTimeoutMs, "message insert");
           await withTimeout(supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversation.id), supabaseTimeoutMs, "conversation update");
-        }
-      }
+        }      }
       const newMemories = !idle && !visionIdle && groqApiKey && memoryIntent.test(lastUserText) ? await extractMemories(groqApiKey, lastUserText) : [];
       if (newMemories.length) {
         await withTimeout(supabase.from("memories").upsert(newMemories.map((item) => ({ user_key: userKey, memory: item.memory.trim(), category: item.category, importance: Math.min(5, Math.max(1, item.importance ?? 3)), updated_at: new Date().toISOString(), last_used_at: new Date().toISOString() })), { onConflict: "user_key,memory" }), supabaseTimeoutMs, "memory upsert");
