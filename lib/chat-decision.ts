@@ -18,6 +18,7 @@ function confidentYes(decision: BooleanDecision | undefined): boolean {
 // JEV proposes; existing explicit requests and actual input capabilities win.
 export function resolveChatPlan(context: JevContext, decision: VivianDecision | null, passive: boolean): ChatPlan {
   const localTools = passive ? [] : detectTools(context.message);
+  // Search is available via Gemini grounding OR Tavily; images don't block search.
   const shouldSearch = !passive && (localTools.includes("web_search") || (context.capabilities.search && confidentYes(decision?.freshInformation)));
   if (shouldSearch && !localTools.includes("web_search")) localTools.push("web_search");
   if (!passive) {

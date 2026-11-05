@@ -8,7 +8,7 @@ import { vivianPersonaPrompt, vivianTurnPrompt } from "@/lib/vivian-persona";
 import { VIVIAN_STORY } from "@/lib/vivian-story";
 import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { runTools, toolsPromptBlock } from "@/lib/tools";
+import { runTools, toolsPromptBlock, webSearchTool, visionSearchIntent } from "@/lib/tools";
 import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
 import { decideVivian, jevEnabled, type JevContext } from "@/lib/jev";
 import { loadSceneContext, executeSceneDecision } from "@/lib/scene-store";
@@ -326,7 +326,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     recentTurns: recent.slice(0, -1).slice(-2),
     hasImage,
     memoryAvailable: Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY),
-    capabilities: { search: Boolean(geminiApiKey), integrations: false },
+    capabilities: { search: Boolean(geminiApiKey) || Boolean(process.env.TAVILY_API_KEY), integrations: false },
     toolkitCandidates: [],
     scenes: sceneContext ? { autoScene: sceneContext.autoScene, activeSceneId: sceneContext.activeSceneId, available: sceneContext.scenes } : undefined,
   };
@@ -357,7 +357,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     })(),
     // 2. Companion state
     statePromise,
-    // 3. Local tools (weather / search)
+    // 3. Local tools (weather / search) — run for vision requests too when shouldSearch is set
     passive ? Promise.resolve([]) : runTools(lastUserText, [], shouldSearch, plan.localTools),
   ]);
 
@@ -373,7 +373,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
       ? [{ role: "user", content: `[ระบบกล้อง Live] นี่คือภาพปัจจุบันจากกล้องของผู้ใช้ ให้ Vivian ใช้เฉพาะสิ่งที่เห็นจริงเป็นวัตถุดิบพูด 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจแซวหรือถามถึงรายละเอียดในภาพ ห้ามสร้างรายละเอียดที่ภาพไม่มี${modeLanguageNote(language)}` }]
       : contents;
 
-  if (shouldSearch && !geminiApiKey) {
+  if (shouldSearch && !geminiApiKey && !process.env.TAVILY_API_KEY) {
     console.warn("Chat search unavailable", { code: "SEARCH_UNAVAILABLE", mode: greeting ? "greeting" : idle ? "idle" : visionIdle ? "vision_idle" : "chat", hasImage });
     return NextResponse.json({ error: "ระบบค้นหาขัดข้อง ตอนนี้ใช้ไม่ได้", code: "SEARCH_UNAVAILABLE" }, { status: 503 });
   }
@@ -433,11 +433,28 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
 
   // Capability route: Groq vision first, Gemini as fallback.
   if (plan.modelRoute === "vision") {
+    // If the user is asking who/what is in the image, run a Tavily search in parallel
+    // so the vision model has web context to identify characters/people/objects.
+    const needsVisionSearch = hasImage && lastUserText && visionSearchIntent.test(lastUserText);
+    const visionSearchPromise = needsVisionSearch && process.env.TAVILY_API_KEY
+      ? webSearchTool(lastUserText)
+      : Promise.resolve(null);
+
     // 1. Try Groq vision (qwen/qwen3.8-27b supports image_url inputs).
     if (!generatedData && groqApiKey) {
       try {
+        // Await vision search in parallel with request build; it started above.
+        const visionSearchResult = await visionSearchPromise;
+        const visionContextNote = visionSearchResult?.ok
+          ? `\n\n[ผลค้นหาเพิ่มเติม — ใช้เป็นข้อมูลประกอบภาพ]:\n${visionSearchResult.content}`
+          : "";
+        const visionGroqMessages = visionContextNote
+          ? [{ role: "user" as const, content: (groqMessages[0]?.content as Array<{type:string;text?:string;image_url?:{url:string}}>)?.map(part =>
+              part.type === "text" ? { ...part, text: (part.text ?? "") + visionContextNote } : part
+            ) ?? groqMessages[0].content }]
+          : groqMessages;
         providerStarted = Date.now();
-        const res = await callGroq(groqApiKey, groqMessages, groqVisionModel(), { timeoutMs: visionTimeoutMs, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
+        const res = await callGroq(groqApiKey, visionGroqMessages, groqVisionModel(), { timeoutMs: visionTimeoutMs, maxTokens: responseTokenLimit, firstToken: observeToken("groq") });
         if (res.ok) {
           generatedData = await res.json();
           provider = "groq";

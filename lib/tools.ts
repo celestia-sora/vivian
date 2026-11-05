@@ -6,6 +6,7 @@ const timeIntent = /กี่โมง|กี่นาฬิกา|ตอนน�
 const calcIntent = /คำนวณ|เท่ากับเท่าไหร่|calculate|เท่าไหร่\s*[0-9]|[0-9]+\s*[\+\-\*x×÷\/]/i;
 const memoryIntent = /จำได้ไหม|เคยบอก|ที่เล่าไว้|recall|what did I tell|remember when/i;
 export const searchIntent = /(ค้นหา|search|หาให้หน่อย|ข่าว|ล่าสุด|ราคา|current|latest|look up|ออนไลน์|บนเว็บ|ในเน็ต)/i;
+export const visionSearchIntent = /(นี่คือใคร|นี่ใคร|คนนี้คือ|ตัวละครนี้|นี่คืออะไร|นี่อะไร|ภาพนี้คือ|รู้จักไหม|คือใคร|who is|who's this|what is this|identify|recognize|character name|anime character)/i;
 
 const weatherCodes: Record<number, string> = {
   0: "ท้องฟ้าโปร่ง",
