@@ -40,7 +40,7 @@ const memoryIntent = /(จำไว้|จำว่า|เรียกฉัน�
 const recentTurnLimit = 12;
 const recentCharLimit = 4500;
 const providerTimeoutMs = 30000;
-const primaryProviderTimeoutMs = 55_000; // Keep the primary Groq request below the 60s route limit.
+const primaryProviderTimeoutMs = 45_000; // Keep the primary Groq request below the 60s route limit.
 const visionTimeoutMs = 20000; // Vision requests need more time to upload base64 image
 const supabaseTimeoutMs = 2000;
 
@@ -147,8 +147,7 @@ async function compressTurns(apiKey: string, older: ChatMessage[], previous: str
     const data = await response.json();
     const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? "{}") as { summary?: string };
     const summary = parsed.summary?.trim() ?? "";
-    return summary.slice(0, 900) || previous;
-  } catch (error) {    console.warn("Context compression unavailable", error);
+    return summary.slice(0, 900) || previous;  } catch (error) {    console.warn("Context compression unavailable", error);
     return previous;
   }
 }
@@ -297,8 +296,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
     interrupted?: boolean;
     character?: string;
     personality?: string;
-    characterName?: string;    customInstructions?: string;
-    language?: string;
+    characterName?: string;    customInstructions?: string;    language?: string;
   };
   const character: CharacterKey = "Miss";
   const personality = body.personality === "shy" || body.personality === "playful" || body.personality === "elegant" ? body.personality : "custom";
@@ -447,8 +445,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
         providerStarted = Date.now();
         const res = await callGemini(geminiApiKey, payload, model, { timeoutMs: visionTimeoutMs, firstToken: observeToken("gemini") });
         if (res.ok) {          generatedData = await res.json();
-          provider = "gemini";
-          break;
+          provider = "gemini";          break;
         }
         console.warn(`Gemini Vision (${model}) returned ${res.status}`);
       } catch (err) {
@@ -597,8 +594,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
           await withTimeout(supabase.from("conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversation.id), supabaseTimeoutMs, "conversation update");
         }      }
       const newMemories = !idle && !visionIdle && groqApiKey && memoryIntent.test(lastUserText) ? await extractMemories(groqApiKey, lastUserText) : [];
-      if (newMemories.length) {
-        await withTimeout(supabase.from("memories").upsert(newMemories.map((item) => ({ user_key: userKey, memory: item.memory.trim(), category: item.category, importance: Math.min(5, Math.max(1, item.importance ?? 3)), updated_at: new Date().toISOString(), last_used_at: new Date().toISOString() })), { onConflict: "user_key,memory" }), supabaseTimeoutMs, "memory upsert");
+      if (newMemories.length) {        await withTimeout(supabase.from("memories").upsert(newMemories.map((item) => ({ user_key: userKey, memory: item.memory.trim(), category: item.category, importance: Math.min(5, Math.max(1, item.importance ?? 3)), updated_at: new Date().toISOString(), last_used_at: new Date().toISOString() })), { onConflict: "user_key,memory" }), supabaseTimeoutMs, "memory upsert");
       }
       if (!idle && !visionIdle && memories.length) {
         const used = memories.slice(0, 8).map((item) => item.id).filter((id): id is number => typeof id === "number");
