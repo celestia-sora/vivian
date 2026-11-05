@@ -15,8 +15,12 @@ export async function resetCompanionData(supabase: SupabaseClient, userKey: stri
     const result = await supabase.from(table).delete().eq("user_key", userKey);
     if (result.error) throw result.error;
   }
+  // Custom instructions are one shared singleton, not identity-scoped.
+  const instructions = await supabase.from("vivian_custom_instructions").delete().eq("id", "global");
+  if (instructions.error) throw instructions.error;
   const checks = await Promise.all(["conversations", "memories", "companion_state"].map(table =>
     supabase.from(table).select("*", { count: "exact", head: true }).eq("user_key", userKey)));
+  checks.push(await supabase.from("vivian_custom_instructions").select("*", { count: "exact", head: true }).eq("id", "global"));
   if (ids.length) checks.push(await supabase.from("messages").select("*", { count: "exact", head: true }).in("conversation_id", ids));
   for (const check of checks) {
     if (check.error) throw check.error;

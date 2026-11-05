@@ -8,6 +8,7 @@ function fixture(failDelete = null, ignoreDelete = null) {
     messages: [{ conversation_id: "a" }, { conversation_id: "b" }],
     memories: [{ user_key: "default" }, { user_key: "other" }],
     companion_state: [{ user_key: "default", conversation_summary: "old" }, { user_key: "other" }],
+    vivian_custom_instructions: [{ id: "global", instructions: "call me Sora" }],
   };
   const client = { from(table) {
     let deleting = false;
@@ -31,7 +32,7 @@ function fixture(failDelete = null, ignoreDelete = null) {
   return { client, rows };
 }
 
-test("full reset removes the requested identity's history, memory, and relationship only", async () => {
+test("full reset removes the requested identity's history, memory, relationship, and shared custom instructions", async () => {
   const { client, rows } = fixture();
   await resetCompanionData(client, "default");
   assert.deepEqual(rows.messages, [{ conversation_id: "b" }]);
@@ -39,6 +40,7 @@ test("full reset removes the requested identity's history, memory, and relations
     assert.equal(rows[name].length, 1);
     assert.equal(rows[name][0].user_key, "other");
   }
+  assert.equal(rows.vivian_custom_instructions.length, 0);
   await resetCompanionData(client, "default");
   assert.equal(rows.messages.length, 1);
 });

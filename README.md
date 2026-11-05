@@ -90,6 +90,7 @@ All protected routes check sign-in and account access.
 | --- | --- |
 | `/api/chat` | Chat, search, image understanding, and tools |
 | `/api/conversations` | GET paginated shared conversations/messages; PUT validated, idempotent message batches |
+| `/api/custom-instructions` | GET/PATCH the shared custom instructions used by every device |
 | `/api/memory` | Read and manage memories and conversation data |
 | `/api/stt` | Convert speech to text |
 | `/api/tts` | Generate speech audio |
@@ -132,3 +133,5 @@ This repository contains Vivian's application code. Models and other assets may 
 Thai Text-to-Speech prepares a separate spoken version of replies (contextual number readings, Markdown cleanup and preserved stammers). See [Thai TTS audit and listening checklist](docs/tts-thai.md); voice identity and loudness settings remain unchanged.
 
 Speaking speed is shared across all authorized accounts via `/api/voice/preferences`. Apply `supabase/migrations/20261007030145_global_voice_preferences.sql` before using it. The client reloads the cloud value on opening, focus and every 15 seconds while visible; the latest completed save wins. Cloud failures are shown in Voice with a retry control. Voice volume and language remain unchanged.
+
+Custom instructions are also shared across every authorized device via `/api/custom-instructions`. Apply `supabase/migrations/20261105090000_custom_instructions.sql` before deploying. Settings keeps an explicit **Save** button: edits stay in the textarea and only the saved value is used by chat, and the client refreshes the shared value on opening, focus and every 15 seconds. A device with pre-sync local instructions uploads them on its first successful sync instead of losing them. Reset Vivian clears the shared custom instructions too.

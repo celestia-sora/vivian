@@ -24,6 +24,7 @@
     "test:history:integration": "node --test tests/chat-history.integration.test.mjs",
     "test:history:postgres": "node --test tests/chat-history.postgres.test.mjs",
     "test:voice-preferences": "node --experimental-strip-types --test tests/voice-preferences.test.mjs",
+    "test:custom-instructions": "node --experimental-strip-types --test tests/custom-instructions.test.mjs",
     "test:performance": "node --experimental-strip-types --test tests/scene-selection.test.mjs tests/model-swap.test.mjs tests/startup-background.test.mjs tests/chat-stream.test.mjs tests/performance.test.mjs tests/voice-performance.test.mjs tests/history-startup.test.mjs",
     "test:performance:browser": "node tests/performance-browser.mjs"
   },
