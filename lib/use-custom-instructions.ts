@@ -147,7 +147,7 @@ export function useCustomInstructions() {
       setSavedValue(saved);
       setValue(saved);
       setSynced(true);
-      setNotice("บันทึกแล้ว · ใช้ร่วมกันทุกเครื่อง");
+      setNotice("บันทึกแล้ว");
     } catch {
       if (alive.current && version === revision.current) setNotice("บันทึกไม่สำเร็จ · ลองอีกครั้ง");
     } finally {

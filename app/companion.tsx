@@ -2291,7 +2291,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                   </button>
                 </div>
               </div>
-              <p role="status">{voiceNotice || "บันทึกและใช้ร่วมกันทุกเครื่อง (Global)"}</p>
+              <p role="status">{voiceNotice || "บันทึกแล้ว (Global)"}</p>
               {voiceNotice.includes("ไม่ได้") || voiceNotice.includes("ไม่สำเร็จ") ? (
                 <button type="button" onClick={() => { if (voiceNotice.includes("โหลด")) void refreshVoicePreferences(); else saveVoiceId(voiceIdInput); }}>ลองอีกครั้ง</button>
               ) : null}
