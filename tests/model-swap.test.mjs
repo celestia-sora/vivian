@@ -23,6 +23,7 @@ function fixture() {
     modelRenderAbortRef: { current: null }, modelSelectionTimingRef: { current: undefined }, startupTimingRef: { current: undefined },
     canvasRef: { current: { dataset: {}, parentElement: { getBoundingClientRect: () => ({ width: 800, height: 600 }) } } },
     pixiAppRef: { current: app }, cloudLibraryRef: { current: null }, modelCloudRequestRef: { current: null },
+    startupModelResolvedRef: { current: false }, setStartupModelPending() {}, setModelSwitchPending() {},
     navigator: { userAgent: 'test', platform: 'Linux', maxTouchPoints: 0 },
     window: Object.assign(new EventTarget(), { devicePixelRatio: 1, setTimeout: () => 1, clearTimeout() {} }),
     sessionStorage: { setItem() {} }, clearModelLoadState() {},
@@ -32,7 +33,7 @@ function fixture() {
     setActiveExpression() {}, setActiveMotion() {}, setModelStatus(v) { bindings.status = v; }, setTextureSummary() {}, setModelPreview() {}, setModelPackages() {}, setModelNotice(v) { notices.push(v); },
     startTiming() {}, finishTiming() {}, cancelTiming() {},
     captureModelRestState: () => ({}), attachModelWind: () => () => {}, waitForCubismCore: async () => {},
-    availableModelPackage: async pack => pack,
+    availableModelPackage: async pack => pack, cacheModelPreviews() {},
     createModelResources: (pack) => new Promise((resolve, reject) => requests.push({ id: pack.id, resolve: () => resolve({ manifest: { id: pack.id }, resolve() {}, texturePlan: [], dispose: () => released.push(pack.id) }), reject })),
     require(name) {
       if (name === 'pixi.js') return { Ticker: {}, MIPMAP_MODES: { OFF: 0 }, WRAP_MODES: { CLAMP: 0 } };

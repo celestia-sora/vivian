@@ -308,10 +308,12 @@ const PagePreloader = ({
   }, [isControlled, onComplete]);
 
   // Sync stage with the active flag: entering re-arms the hold, and a
-  // controlled dismissal while holding starts the exit.
+  // controlled dismissal while holding starts the exit. Re-activating while
+  // the exit is still playing must bring the overlay back, otherwise a quick
+  // model switch would leave the loader hidden for the next load.
   useEffect(() => {
     if (active) {
-      setStage((current) => (current === "exiting" ? current : "hold"));
+      setStage("hold");
       setWordIndex(0);
       return;
     }

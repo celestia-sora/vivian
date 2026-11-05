@@ -251,6 +251,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelUploadKey, setModelUploadKey] = useState(0);
   const [modelStatus, setModelStatus] = useState<"empty" | "loading" | "ready" | "error">("empty");
   const [startupModelPending, setStartupModelPending] = useState(false);
+  const [modelSwitchPending, setModelSwitchPending] = useState(false);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const modelCloudRequestRef = useRef<Promise<CloudLibrary | null> | null>(null);
   const [cloudLibrary, setCloudLibrary] = useState<CloudLibrary | null>(null);
@@ -559,6 +560,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     setStartupModelPending(false);
     const pack = modelPackages.find((entry) => entry.models.some((model) => model.id === id));
     if (!pack) return;
+    setModelSwitchPending(true);
     modelSelectionAbortRef.current?.abort();
     const abort = new AbortController(); modelSelectionAbortRef.current = abort;
     cancelTiming(modelSelectionTimingRef.current);
@@ -583,6 +585,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     } catch (error) {
       if (abort.signal.aborted) return;
       setPendingModelId(null);
+      setModelSwitchPending(false);
       cancelTiming(modelSelectionTimingRef.current);
       setModelStatus(modelRef.current ? "ready" : "error");
       setModelNotice(error instanceof Error ? error.message : "Could not load model.");
@@ -778,7 +781,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     if (!activeModel || !activePackage) {
       modelPresentationRef.current?.dispose(); modelPresentationRef.current = null;
       modelRef.current = null; modelRestStateRef.current = null;
-      setModelStatus("empty"); return;
+      setModelStatus("empty"); setModelSwitchPending(false); return;
     }
     setModelStatus("loading");
     setTextureSummary(null);
@@ -945,6 +948,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         finishTiming(startupTimingRef.current);
         window.dispatchEvent(new Event("vivian-model-first-frame"));
         setModelStatus("ready");
+        setModelSwitchPending(false);
         startupModelResolvedRef.current = true;
         setStartupModelPending(false);
         clearRecovery();
@@ -970,6 +974,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           setModelStatus("error");
           startupModelResolvedRef.current = true;
           setStartupModelPending(false);
+          setModelSwitchPending(false);
           setModelNotice(error instanceof Error ? error.message : "Could not render this model. Check that it is compatible with Cubism 4 and includes all assets.");
         }
         if (!promoted) releaseResources?.();
@@ -2070,8 +2075,9 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
 
-  // Show Vivian preloader while Live2D model is loading
-  const live2dLoading = startupModelPending;
+  // Show Vivian preloader while a Live2D model is loading — on startup,
+  // while switching models, and while the renderer builds the first frame.
+  const live2dLoading = startupModelPending || modelSwitchPending || modelStatus === "loading";
 
   return <main className="companion-shell">
     <PagePreloader
