@@ -6,6 +6,12 @@ Only `/api/tts` prepares speech; the browser retains the original chat reply. ST
 
 TTS now uses ElevenLabs Text to Dialogue with `model_id: "eleven_v4"`, `ELEVENLABS_API_KEY`, and `ELEVENLABS_VOICE_ID`. The endpoint supports 2,000 spoken characters per request; the route enforces the limit after Thai text preparation. Speed is not sent because Eleven v4 does not support the speed setting. The older Fish Audio audit below records the former implementation only.
 
+## Natural ElevenLabs v4 Audio Tags
+
+Vivian's dialogue prompt now selects tags contextually across five categories: Emotion, Vocalizations, Delivery, Character, and Sound effects. Most replies should have no tag; one or two well-placed tags are enough when vocal delivery genuinely changes. Emotion cues begin the sentence they guide, while other cues sit immediately before their sound or segment. Avoid decorative laughter, sighs, stacked tags, repeated cues, and ambient effects outside an actual scene. Tags stay inline in the API input and are excluded from spoken text. Use punctuation and natural wording for cadence because Eleven v4 does not support SSML break tags.
+
+Official guidance: [ElevenLabs v4 best practices](https://elevenlabs.io/docs/overview/capabilities/text-to-speech/best-practices) and [Audio Tags guide](https://elevenlabs.io/docs/help-center/product/core-capabilities/text-to-speech/how-do-audio-tags-work-with-eleven-v3-and-v4).
+
 ## Audit (2026-10-07)
 
 Baseline main: `1412f36`. Default model remains `s2.1-pro-free`; `FISH_AUDIO_MODEL` can override it. `reference_id` remains `FISH_AUDIO_VOICE_ID`. No production credentials or reference recordings were available in this workspace, so the deployed override and source voice's accent could not be inspected.
