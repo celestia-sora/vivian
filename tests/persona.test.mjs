@@ -34,8 +34,8 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /Immediately honor any request to stop, slow down, or change the subject/);
   assert.match(route, /ติดอ่าง ลากเสียงหรือเว้นจังหวะ/);
   assert.match(persona, /draw from all five tag categories when useful/);
-  assert.match(persona, /Put an Emotion tag at the beginning of the sentence it guides/);
-  assert.match(persona, /Tags are audio metadata and must not be spoken aloud/);
+  assert.match(persona, /Put one Emotion tag at the beginning of the sentence it guides/);
+  assert.match(persona, /Audio tags are inline performance metadata.*not spoken words/);
   assert.match(persona, /draw from all five tag categories when useful/);
   assert.match(persona, /one or two well-placed tags feel natural/);
   assert.match(persona, /Never stack tags back to back, never tag every sentence/);
