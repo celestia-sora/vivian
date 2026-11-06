@@ -44,7 +44,7 @@ export type JevResult = JevOutcome & { elapsedMs: number };
 
 // Keep the established System One noul wire format: batch independent questions.
 const instructions = {
-  needs_current_information: "Would fresh web information be relevant to this turn if Vivian chooses to engage with it factually, such as recent news, live prices, current schedules, or changing facts? Ordinary conversation and timeless topics do not.",
+  needs_current_information: "Should Vivian search the web before answering because the requested facts may be outside Qwen’s reliable knowledge, obscure or niche, hard to identify, ambiguous, or need verification? Also search for recent news, live prices, current schedules, changing facts, exact names/versions, unfamiliar technical details, and claims where guessing would risk hallucination. Do not search for ordinary conversation or well-established timeless facts Qwen can answer reliably.",
   needs_memory: "Would durable user memories be relevant to this conversation, personalization, or recalling a previous preference/project? Prefer yes for personal companion conversation; this only prepares context and never obligates an answer.",
   recalls_memory: "Is the user's intent to recall something they previously told Vivian, such as a preference, name or ongoing project? Ordinary companion conversation may benefit from memory but is not itself a recall request.",
   needs_vision: "Does the user ask about an image, their appearance, surroundings, or something that must be seen? Image presence alone is not proof of intent. Do not claim to see image contents: only metadata is provided.",
