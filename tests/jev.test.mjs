@@ -153,6 +153,8 @@ test("one batched request bounds context and sends metadata rather than image/me
   assert.equal(body.model, "jev-latest");
   assert.equal(Object.keys(body.questions).length, 10);
   assert.ok(Object.values(body.questions).every((question) => question.type === "noul"));
+  assert.match(body.questions.needs_current_information.instructions, /outside Qwen’s reliable knowledge/);
+  assert.match(body.questions.needs_current_information.instructions, /hallucination/);
   const state = JSON.parse(body.state);
   assert.equal(state.message.length, 1200);
   assert.equal(state.recentTurns.length, 2);
