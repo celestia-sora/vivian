@@ -4,10 +4,11 @@ import SmoothButton from "@/components/ui/smoothui/smooth-button";
 import { cn } from "@/lib/utils";
 import { motion, useReducedMotion } from "motion/react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 
 export interface CoverflowCarouselItem {
   alt?: string;
+  badge?: ReactNode;
   content?: ReactNode;
   id: string;
   image?: string;
@@ -198,13 +199,15 @@ const CoverflowCarousel = ({
               className="absolute h-[220px] w-[280px] overflow-hidden rounded-2xl border border-foreground/10 bg-background shadow-xl"
               key={item.id}
               style={{
+                backfaceVisibility: "hidden",
                 transformStyle: "preserve-3d",
+                willChange: "transform, opacity",
                 zIndex: total - Math.abs(offset),
               }}
               transition={
                 shouldReduceMotion
                   ? { duration: 0 }
-                  : { bounce: 0.1, duration: 0.25, type: "spring" }
+                  : { bounce: 0, duration: 0.22, type: "spring" }
               }
             >
               {item.image ? (
@@ -214,16 +217,25 @@ const CoverflowCarousel = ({
                     className="h-full w-full object-cover"
                     decoding="async"
                     draggable={false}
-                    loading="eager"
+                    fetchPriority={isActive ? "high" : "low"}
+                    loading={isActive ? "eager" : "lazy"}
                     src={item.image}
                   />
+                  {item.badge && (
+                    <div className="absolute right-3 top-3 z-10">{item.badge}</div>
+                  )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/55 to-transparent px-4 pb-4 pt-12 text-center text-white">
                     {item.content}
                   </div>
                 </>
               ) : (
-                <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-[#49344f] via-[#312b40] to-[#211e2d] p-5 text-center text-sm text-white">
-                  {item.content}
+                <div className="relative flex h-full w-full items-center justify-center bg-[#ff92c4] p-5 text-center text-sm text-white">
+                  {item.badge && (
+                    <div className="absolute right-3 top-3 z-10">{item.badge}</div>
+                  )}
+                  <span className="grid gap-1 drop-shadow-[0_2px_6px_rgba(0,0,0,0.35)]">
+                    {item.content}
+                  </span>
                 </div>
               )}
             </motion.div>
@@ -261,4 +273,7 @@ const CoverflowCarousel = ({
   );
 };
 
-export default CoverflowCarousel;
+const MemoCoverflowCarousel = memo(CoverflowCarousel);
+MemoCoverflowCarousel.displayName = "CoverflowCarousel";
+
+export default MemoCoverflowCarousel;

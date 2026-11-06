@@ -70,8 +70,9 @@ export async function preloadModelPackages(
   // 2. Lazily preload the remaining packages one by one with a small yield/delay
   for (const pack of otherPacks) {
     signal.throwIfAborted();
-    // Yield to let UI and Live2D rendering run smoothly before fetching another model
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Yield to let UI and Live2D rendering run smoothly before fetching another model.
+    // Keep the gap short so neighbour previews appear soon after the first frame.
+    await new Promise((resolve) => setTimeout(resolve, 350));
     signal.throwIfAborted();
     await load(pack, signal).catch((error: unknown) => {
       if (signal.aborted) throw error;

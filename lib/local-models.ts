@@ -292,10 +292,18 @@ export function isModelBlobReadError(error: unknown): boolean {
 async function checkModelBlobs(pack: ModelPackage, signal?: AbortSignal): Promise<void> {
   // Safari can restore Blob handles whose backing objects were evicted or lost
   // in a WebContent crash. Probe bounded slices before creating runtime URLs.
-  for (const asset of pack.assets) {
-    signal?.throwIfAborted();
-    if (asset.blob.size) await asset.blob.slice(0, 1).arrayBuffer();
-  }
+  // Probe in small parallel batches: serial reads make startup slow for
+  // packages with hundreds of files, while unbounded fan-out can thrash memory.
+  const CONCURRENCY = 8;
+  let next = 0;
+  const probe = async () => {
+    while (next < pack.assets.length) {
+      signal?.throwIfAborted();
+      const asset = pack.assets[next++];
+      if (asset.blob.size) await asset.blob.slice(0, 1).arrayBuffer();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, pack.assets.length) }, probe));
   signal?.throwIfAborted();
 }
 export async function hydrateModelPackage(pack: ModelPackage, options?: { recover?: () => Promise<ModelPackage>; signal?: AbortSignal }): Promise<ModelPackage | undefined> {

@@ -24,6 +24,8 @@ function startup({ local = [pack('local')], saved = 'local:model', interrupted =
     useEffect: (callback) => { cleanup = callback(); },
     getCloudModels: () => new Promise((resolve) => { finishCloud = resolve; }),
     loadModelCatalog: async () => local,
+    preloadLive2DModules: async () => {},
+    refreshSnapshots: () => {},
     modelCloudRequestRef: { current: null }, accountId: 'account',
     modelPreloadAbortRef: { current: null },
     localStorage: storage({ 'vivian-local-model': saved }), sessionStorage: storage(interrupted),

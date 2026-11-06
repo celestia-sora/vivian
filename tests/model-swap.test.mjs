@@ -16,6 +16,13 @@ function fixture() {
   const app = { stage, renderer };
   const modelPresentationRef = { current: null }, modelRef = { current: null }, modelLoadIdRef = { current: 0 };
   let cleanup;
+  const pixiMock = { Ticker: {}, MIPMAP_MODES: { OFF: 0 }, WRAP_MODES: { CLAMP: 0 } };
+  const live2dMock = { Cubism4ModelSettings: class { constructor(manifest) { Object.assign(this, manifest); } }, Live2DModel: {
+        registerTicker() {}, async from(settings) {
+          const m = { id: settings.id, visible: true, internalModel: { coreModel: {} }, textures: [{ valid: true, baseTexture: {} }], once() {}, scale: { set() {} }, anchor: { set() {} }, pivot: { set() {} }, getLocalBounds: () => ({ x: 0, y: 0, width: 100, height: 200 }), destroy() { m.destroyed = true; } };
+          models.push(m); return m;
+        },
+      } };
   const bindings = {
     preferencesReady: true, modelsReady: true, graphicsLost: false, modelPaused: false,
     activeModelId: 'a', textureQuality: 'auto', modelReload: 0,
@@ -33,16 +40,12 @@ function fixture() {
     setActiveExpression() {}, setActiveMotion() {}, setModelStatus(v) { bindings.status = v; }, setTextureSummary() {}, setModelPreview() {}, setModelPackages() {}, setModelNotice(v) { notices.push(v); },
     startTiming() {}, finishTiming() {}, cancelTiming() {},
     captureModelRestState: () => ({}), attachModelWind: () => () => {}, waitForCubismCore: async () => {},
-    availableModelPackage: async pack => pack, cacheModelPreviews() {},
+    preloadLive2DModules: () => Promise.all([pixiMock, live2dMock]),
+    availableModelPackage: async pack => pack, cacheModelPreviews() {}, cacheSnapshotPreview() {}, snapshotToBlob: async () => null,
     createModelResources: (pack) => new Promise((resolve, reject) => requests.push({ id: pack.id, resolve: () => resolve({ manifest: { id: pack.id }, resolve() {}, texturePlan: [], dispose: () => released.push(pack.id) }), reject })),
     require(name) {
-      if (name === 'pixi.js') return { Ticker: {}, MIPMAP_MODES: { OFF: 0 }, WRAP_MODES: { CLAMP: 0 } };
-      if (name === 'pixi-live2d-display/cubism4') return { Cubism4ModelSettings: class { constructor(manifest) { Object.assign(this, manifest); } }, Live2DModel: {
-        registerTicker() {}, async from(settings) {
-          const m = { id: settings.id, visible: true, internalModel: { coreModel: {} }, textures: [{ valid: true, baseTexture: {} }], once() {}, scale: { set() {} }, anchor: { set() {} }, pivot: { set() {} }, getLocalBounds: () => ({ x: 0, y: 0, width: 100, height: 200 }), destroy() { m.destroyed = true; } };
-          models.push(m); return m;
-        },
-      } };
+      if (name === 'pixi.js') return pixiMock;
+      if (name === 'pixi-live2d-display/cubism4') return live2dMock;
       throw new Error(name);
     },
   };
