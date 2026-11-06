@@ -77,7 +77,6 @@ button { cursor: pointer; }
 .companion-stage { position: relative; isolation: isolate; width: 100%; height: 100%; overflow: hidden; background-position: center; background-size: cover; background-repeat: no-repeat; background-color: #e0d6ff; }
 .companion-stage.vivian-bg { background: radial-gradient(ellipse 62% 58% at 50% 34%, #f4efff 0%, #e0d6ff 34%, #cbbbf5 68%, #b7a3f0 100%); }
 .companion-stage.witch-bg { background: radial-gradient(ellipse 62% 58% at 50% 34%, #efe9ff 0%, #ddd1ff 37%, #c4b5fd 72%, #b7a3f0 100%); }
-.companion-stage::before { content: ""; position: absolute; z-index: 1; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgb(224 214 255 / .3) 0%, transparent 22%, transparent 65%, rgb(224 214 255 / .35) 100%); }
 .scene-background { position: absolute; z-index: 0; inset: 0; background-position: center; background-size: cover; background-repeat: no-repeat; animation: scene-fade-in .42s ease both; will-change: opacity; }
 @keyframes scene-fade-in { from { opacity: 0; transform: scale(1.015); } to { opacity: 1; transform: scale(1); } }
 .live2d-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
