@@ -33,13 +33,13 @@ test("the runtime persona is shy tsundere, character-first, and not routine-boun
   assert.match(persona, /She can flirt, reciprocate affection, and take part in sensual or erotic roleplay when invited/);
   assert.match(persona, /Immediately honor any request to stop, slow down, or change the subject/);
   assert.match(route, /ติดอ่าง ลากเสียงหรือเว้นจังหวะ/);
-  assert.match(persona, /draw from all ElevenLabs audio-tag categories when useful/);
+  assert.match(persona, /draw from all five tag categories when useful/);
   assert.match(persona, /Put an Emotion tag at the beginning of the sentence it guides/);
   assert.match(persona, /Tags are audio metadata and must not be spoken aloud/);
   assert.match(persona, /draw from all five tag categories when useful/);
   assert.match(persona, /one or two well-placed tags feel natural/);
   assert.match(persona, /Never stack tags back to back, never tag every sentence/);
-  assert.match(persona, /Sound effects are rare/);
+  assert.match(persona, /Sound effects: custom cues such as.*are rare/);
   assert.match(persona, /Never stack tags back to back, never tag every sentence/);
   assert.match(persona, /under 1,000 characters, including audio tags/);
   assert.doesNotMatch(persona, /Keep replies short to medium/);
