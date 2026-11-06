@@ -89,7 +89,7 @@ button { cursor: pointer; }
 /* Keep speech above the double-tap shortcut row. */
 .companion-stage:has(.orb-toolbar) .speech-stack { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 196px); }
 .companion-stage:has(.composer-pill.is-open):has(.orb-toolbar) .speech-stack { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 266px); }
-.vivian-speech, .speech-preview { max-width: 100%; text-align: center; line-height: 1.42; white-space: pre-wrap; text-wrap: balance; text-shadow: 0 1px 6px rgb(255 255 255 / .7), 0 2px 14px rgb(255 255 255 / .45); }
+.vivian-speech, .speech-preview { max-width: 100%; text-align: center; line-height: 1.42; white-space: pre-wrap; text-wrap: balance; text-shadow: none; }
 .vivian-speech { padding: 0; border: 0; color: #241329; background: none; box-shadow: none; font-size: clamp(17px, 1.8vw, 24px); }
 .speech-transition { display: block; animation: speech-rise .68s cubic-bezier(.16, 1, .3, 1) both; }
 @keyframes speech-rise { from { opacity: 0; transform: translateY(38px) scale(.97); filter: blur(8px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
