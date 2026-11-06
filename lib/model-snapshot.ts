@@ -6,6 +6,9 @@ export const SNAPSHOT_PREVIEW_PATH = "__snapshot__";
 /** Coverflow card aspect (280 × 220). Thumbnails are cropped to match it exactly. */
 export const SNAPSHOT_CARD_ASPECT = 280 / 220;
 
+/** Backdrop baked into every thumbnail JPEG (JPEG has no transparency). */
+export const SNAPSHOT_BACKGROUND = "#c9c9ff";
+
 export interface SnapshotSize {
   width: number;
   height: number;
@@ -66,10 +69,10 @@ export function snapshotTargetSize(
 }
 
 /**
- * Downscale a rendered canvas to a JPEG blob, optionally drawing only the
- * given source crop first. Returns null outside the browser, on failure,
- * or when the canvas is empty — the card then keeps its pink name fallback.
- * The source canvas is never mutated.
+ * Downscale a rendered canvas to a JPEG blob on the thumbnail backdrop,
+ * optionally drawing only the given source crop first. Returns null outside
+ * the browser, on failure, or when the canvas is empty — the card then keeps
+ * its pink name fallback. The source canvas is never mutated.
  */
 export async function snapshotToBlob(
   source: HTMLCanvasElement,
@@ -78,6 +81,7 @@ export async function snapshotToBlob(
   crop?: SnapshotCrop,
 ): Promise<Blob | null> {
   if (typeof document === "undefined" || !source?.width || !source?.height) return null;
+  if (crop && (crop.width < 1 || crop.height < 1)) return null;
   let size: SnapshotSize;
   try {
     size = snapshotTargetSize(crop?.width ?? source.width, crop?.height ?? source.height, targetWidth);
@@ -91,17 +95,15 @@ export async function snapshotToBlob(
         width: Math.min(crop.width, source.width),
         height: Math.min(crop.height, source.height),
       }
-    : null;
-  if (!region) {
-    const direct = await new Promise<Blob | null>((resolve) => source.toBlob(resolve, "image/jpeg", quality));
-    return direct?.size ? direct : null;
-  }
+    : { x: 0, y: 0, width: source.width, height: source.height };
   const canvas = document.createElement("canvas");
   canvas.width = size.width;
   canvas.height = size.height;
   const context = canvas.getContext("2d");
   if (!context) return null;
   try {
+    context.fillStyle = SNAPSHOT_BACKGROUND;
+    context.fillRect(0, 0, size.width, size.height);
     context.drawImage(source, region.x, region.y, region.width, region.height, 0, 0, size.width, size.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
     return blob?.size ? blob : null;

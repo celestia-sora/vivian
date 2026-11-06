@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { faceCrop, snapshotTargetSize, snapshotToBlob, SNAPSHOT_PREVIEW_PATH } from '../lib/model-snapshot.ts';
+import { faceCrop, snapshotTargetSize, snapshotToBlob, SNAPSHOT_BACKGROUND, SNAPSHOT_PREVIEW_PATH } from '../lib/model-snapshot.ts';
 
 test('face crop keeps full model width and matches the card aspect at the top', () => {
   const crop = faceCrop({ x: 400, y: 80, width: 480, height: 520 }, 1280, 720);
@@ -46,6 +46,7 @@ test('snapshot rejects invalid sizes', () => {
 
 test('snapshotToBlob returns null without a browser canvas instead of throwing', async () => {
   assert.equal(SNAPSHOT_PREVIEW_PATH, '__snapshot__');
+  assert.equal(SNAPSHOT_BACKGROUND, '#c9c9ff');
   const fake = { width: 800, height: 400 };
   assert.equal(await snapshotToBlob(fake), null);
 });

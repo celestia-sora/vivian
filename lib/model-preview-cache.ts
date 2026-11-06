@@ -12,11 +12,11 @@ let writes: Promise<unknown> = Promise.resolve();
 
 async function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("vivian-model-previews", 3);
+    const request = indexedDB.open("vivian-model-previews", 4);
     request.onupgradeneeded = () => {
-      // v2/v3 purge older thumbnails: v1 was center-cropped (headless),
-      // v2 captured the full stage frame which reads back black on iOS.
-      // Captures are now tight with a top-anchored face crop instead.
+      // Each version purges older captures: v1 was center-cropped
+      // (headless), v2 captured the full stage frame (black on iOS),
+      // v3 lacked the #c9c9ff thumbnail backdrop.
       const db = request.result;
       if (db.objectStoreNames.contains("previews")) db.deleteObjectStore("previews");
       db.createObjectStore("previews");
