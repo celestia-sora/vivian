@@ -22,6 +22,17 @@ test('face crop clamps to the canvas and never mutates invalid input', () => {
   assert.equal(faceCrop({ x: 0, y: 0, width: 100, height: 100 }, 0, 0), null);
 });
 
+test('face crop on a tight full-model capture yields a top band at card aspect', () => {
+  const crop = faceCrop({ x: 0, y: 0, width: 522, height: 700 }, 522, 700);
+  assert.ok(crop);
+  assert.equal(crop.x, 0);
+  assert.equal(crop.y, 0);
+  assert.equal(crop.width, 522);
+  assert.ok(crop.height < 700, 'top band is shorter than the full model');
+  assert.ok(crop.height > 200, 'band is deep enough for the face');
+  assert.equal(Math.round(crop.width / crop.height * 1000), Math.round(280 / 220 * 1000));
+});
+
 test('snapshot keeps small sources and scales large sources to the target width', () => {
   assert.deepEqual(snapshotTargetSize(300, 200, 360), { width: 300, height: 200 });
   assert.deepEqual(snapshotTargetSize(800, 400, 360), { width: 360, height: 180 });

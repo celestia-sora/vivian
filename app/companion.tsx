@@ -1010,24 +1010,24 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         setStartupModelPending(false);
         clearRecovery();
         // Thumbnail for Character cards: supplied previews win, otherwise
-        // snapshot the live render once. Capture the full stage and crop to
-        // the model's top so the face is visible — a tight model-only capture
-        // gets center-cropped by the card and loses the head. Fire-and-forget
-        // so the first frame is never delayed by thumbnail work.
+        // snapshot the live render once. Capture the model tight (a stage
+        // target renders to a RenderTexture synchronously — the reliable
+        // path on iOS, where full-frame readbacks come back black) and crop
+        // to the top so the face stays visible. Fire-and-forget so the
+        // first frame is never delayed by thumbnail work.
         if (!renderModel.previewPath) {
           void (async () => {
             try {
               const Extract = (PIXI as any).Extract;
               if (!Extract) return;
               const extract = new Extract(app.renderer);
-              const frame = extract.canvas() as HTMLCanvasElement | undefined;
+              const frame = extract.canvas(app.stage) as HTMLCanvasElement | undefined;
               if (!frame) return;
-              const world = typeof model.getBounds === "function" ? model.getBounds() : null;
-              const crop = world ? faceCrop(
-                { x: world.x ?? 0, y: world.y ?? 0, width: world.width ?? 0, height: world.height ?? 0 },
+              const crop = faceCrop(
+                { x: 0, y: 0, width: frame.width, height: frame.height },
                 frame.width,
                 frame.height,
-              ) : null;
+              );
               const blob = await snapshotToBlob(frame, 360, 0.72, crop ?? undefined);
               if (!blob) return;
               if (disposed || loadId !== modelLoadIdRef.current) return;
