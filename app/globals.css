@@ -2,24 +2,26 @@
 @import "tailwindcss";
 
 /* Tailwind color tokens for the SmoothUI primitives (upload + buttons). They
- * mirror the companion's midnight/lavender palette so imported components sit
- * on the glass panels instead of falling back to unstyled utilities. */
+ * mirror the companion's lavender palette so imported components sit on the
+ * glass panels instead of falling back to unstyled utilities. Foreground and
+ * muted tokens are flipped dark against the light lavender background so
+ * text stays readable on every bg-background surface. */
 @theme {
-  --color-background: #1a1327;
-  --color-foreground: #f9f3ff;
-  --color-muted: #4a3a5e;
-  --color-muted-foreground: #d4c7d5;
+  --color-background: #e0d6ff;
+  --color-foreground: #241329;
+  --color-muted: #d2c6fa;
+  --color-muted-foreground: #5f5470;
   --color-primary: #e9a8d0;
   --color-primary-foreground: #2a1730;
-  --color-secondary: #3a2b4d;
-  --color-secondary-foreground: #f9f3ff;
+  --color-secondary: #d2c6fa;
+  --color-secondary-foreground: #241329;
   --color-destructive: #ff9db4;
   --color-destructive-fg: #2a1020;
   --color-ring: #e8a3cd;
   --color-brand: #e9a8d0;
   --color-brand-secondary: #b98ad6;
   --color-on-brand: #241329;
-  --color-border: #ffffff2e;
+  --color-border: #24132929;
 }
 
 /* The private entrance uses the companion's midnight and lavender palette. */
@@ -63,7 +65,7 @@
 .companion-stage.is-idle .live2d-canvas { animation: vivian-idle-breathe 5s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .companion-stage.is-idle .live2d-canvas { animation: none; } }
 
-:root { color-scheme: dark; }
+:root { color-scheme: light; }
 * { box-sizing: border-box; }
 html, body { min-height: 100%; margin: 0; overflow: hidden; background: #10091d; }
 body { font-family: "Itim", system-ui, sans-serif; }
