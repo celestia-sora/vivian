@@ -2166,7 +2166,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     <PagePreloader
       active={live2dLoading}
       variant="words"
-      background="bg-black/90 backdrop-blur-sm"
+      background="bg-background/90 backdrop-blur-sm"
       words={["รอฉันแป๊บนึงนะคะ...", "วิเวียนกำลังเตรียมตัวให้สวยอยู่", "อย่าไปไหนนะ... ฉันจะมา", "แค่เธอคนเดียว รอได้ใช่ไหมคะ", "เกือบพร้อมแล้วค่ะ"]}
       onComplete={() => {}}
     />
@@ -2361,14 +2361,14 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
               </button>
               <div className="custom-instructions voice-id-preferences">
                 <strong>11Labs Voice ID</strong>
-                <p>Voice ID ที่ใช้งานอยู่ตอนนี้ (Global): <code style={{ color: "#e9b1d2", background: "#ffffff1a", padding: "2px 6px", borderRadius: "4px" }}>{voiceId || "Default (System)"}</code></p>
+                <p>Voice ID ที่ใช้งานอยู่ตอนนี้ (Global): <code style={{ color: "#241329", background: "#e0d6ff", padding: "2px 6px", borderRadius: "4px" }}>{voiceId || "Default (System)"}</code></p>
                 <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
                   <input
                     type="text"
                     value={voiceIdInput}
                     placeholder="ใส่ 11Labs Voice ID..."
                     onChange={(e) => setVoiceIdInput(e.target.value)}
-                    style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "#fff", font: "inherit", fontSize: "13px" }}
+                    style={{ flex: 1, padding: "8px 12px", borderRadius: "10px", border: "1px solid rgba(36,19,41,0.2)", background: "rgba(255,255,255,0.65)", color: "#241329", font: "inherit", fontSize: "13px" }}
                   />
                   <button
                     type="button"
