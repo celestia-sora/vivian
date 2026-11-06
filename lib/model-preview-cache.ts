@@ -12,9 +12,13 @@ let writes: Promise<unknown> = Promise.resolve();
 
 async function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("vivian-model-previews", 1);
+    const request = indexedDB.open("vivian-model-previews", 2);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains("previews")) request.result.createObjectStore("previews");
+      // v2 purges v1 center-cropped thumbnails (headless torso captures);
+      // faces are re-captured from the live render on next use.
+      const db = request.result;
+      if (db.objectStoreNames.contains("previews")) db.deleteObjectStore("previews");
+      db.createObjectStore("previews");
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

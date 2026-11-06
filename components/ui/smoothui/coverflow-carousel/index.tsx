@@ -214,7 +214,7 @@ const CoverflowCarousel = ({
                 <>
                   <img
                     alt={item.alt ?? ""}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover object-top"
                     decoding="async"
                     draggable={false}
                     fetchPriority={isActive ? "high" : "low"}
