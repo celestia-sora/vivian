@@ -80,7 +80,7 @@ export function SceneManager({ library }: { library: SceneLibrary }) {
   }
   return <div className="scene-manager">
     <button type="button" className="floating-option scene-auto-toggle" role="switch" aria-checked={library.preferences.autoScene} disabled={!library.ready || library.busy || working} onClick={() => void library.updatePreferences({ autoScene: !library.preferences.autoScene })}>AI Auto Scene <strong>{library.preferences.autoScene ? "ON" : "OFF"}</strong></button>
-    <p className="floating-note">Your labels tell Vivian what each scene means. When AI Auto Scene is ON, the background changes to the scene whose name is mentioned (for example returning to คฤหาสน์) — by you or by Vivian herself — and Vivian talks about the current scene.</p>
+    <p className="floating-note">Your labels tell Vivian what each scene means. When AI Auto Scene is ON, the background changes to the scene you are mentioning or moving to — Vivian may mention the current place lightly when it fits, without repeating its name.</p>
     {library.notice && <div role="alert" className="model-notice">{library.notice}{!library.ready && <button type="button" className="floating-option" onClick={() => void library.refresh().catch((error: Error) => library.setNotice(error.message))}>Retry loading scenes</button>}</div>}
     {success && <p role="status" className="floating-note">{success}</p>}
     {!editor && library.scenes.length < SCENE_MAX_COUNT && <AnimatedFileUpload

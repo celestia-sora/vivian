@@ -54,14 +54,14 @@ The adapter converts probabilities to `{change:true,id}` when the highest score 
 
 Two deterministic fallbacks make the label the switch even when JEV is disabled, times out, or under-scores:
 
-- `findSceneLabelMatch` (lib/scenes.ts) scans the user's message and the last two turns (both speakers) for an exact label mention such as "คฤหาสน์". The longest matching label wins; the active scene is excluded and single-character labels are ignored. The Harness applies it when JEV returns no change, and the route still loads the catalog when JEV is disabled so this path works without a Typesafe key.
-- After generation, the route scans Vivian's own reply for a label. JEV ran before generation and could not see her wording; if she says "กลับคฤหาสน์กัน" the background switches in the same turn instead of waiting for the user to repeat it.
+- `findSceneLabelMatch` (lib/scenes.ts) scans the user's message and the last two turns (both speakers) for label mentions. Exact mentions win (longest, then latest destination); partial matches use anchor words and substring coverage so a core name can find a longer label, but a tie across overlapping scenes returns nothing. Negated mentions ("ไม่อยากไป…", "อย่าไป…") are ignored. The active scene and single-character labels are excluded. The Harness applies it when JEV returns no change, and the route still loads the catalog when JEV is disabled so this path works without a Typesafe key.
+- After generation, the route scans Vivian's own reply for a label. JEV ran before generation and could not see her wording; if she names the place she is moving to, the background switches in the same turn instead of waiting for the user to repeat it.
 
 The Harness checks schema, enabled mode, offered ID, active ID and account ownership. After normal conversation generation succeeds, execution rechecks the row and object availability using Storage `info`, then atomically updates the selection only if Auto Scene is still ON and the saved preference revision matches the turn's snapshot. Manual selection/toggle changes or concurrent turns invalidate stale proposals. Execution has a separate 1.2 s deadline. Scene errors return no change and never invalidate a conversation reply. Metadata-only debug logs (`JEV_DEBUG=true` or development) record where a scene switch was skipped without logging chat text or labels.
 
 The existing chat JSON adds `scene: {change:false}` or `scene: {change:true,id}` beside `text`. The frontend resolves the saved ID, preloads and renders it; JEV/Harness never manipulate DOM. Frontend request generations also prevent late proposals from overriding a more recent manual action.
 
-When a scene is active, the main dialogue model receives only its label as one short line ("ฉากปัจจุบัน: ตอนนี้ Vivian กับผู้ใช้อยู่ที่ "...""). She can refer to the place naturally ("กลับมาถึงคฤหาสน์แล้ว") so she actually talks about the scene she is in; the name is used only when it fits the conversation and never every sentence.
+When a scene is active, the main dialogue model receives only its label as one short line ("ฉากปัจจุบันของฉากหลังคือ ..."). She treats it as a quiet backdrop, says "ที่นี่/ตรงนี้" normally, and mentions the name only when the user asks about the place, invites a change, or the conversation truly needs it — the name is never repeated every sentence.
 
 ## Tests
 

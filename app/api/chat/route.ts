@@ -377,7 +377,7 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
   // had no way to know where "here" is and never mentioned it.
   const activeSceneLabel = sceneContext ? sceneLabelForId(sceneContext.scenes, sceneContext.activeSceneId) : null;
   const sceneContextBlock = activeSceneLabel
-    ? `\n\nฉากปัจจุบัน: ตอนนี้ Vivian กับผู้ใช้อยู่ที่ "${activeSceneLabel}" ให้ถือว่าที่นี่คือสถานที่ที่คุยกันอยู่ พูดถึงชื่อฉากนี้ได้ตามบริบท (เช่น กลับมาถึง${activeSceneLabel}แล้ว, อยู่ที่${activeSceneLabel}ต่อ) แบบเป็นธรรมชาติ ไม่ต้องรายงานระบบฉากทุกครั้ง และอย่ายัดชื่อฉากทุกประโยค; ให้พูดถึงเมื่อสถานที่มีผลต่อบทสนทนาหรือเมื่อผู้ใช้พูดถึงสถานที่นั้น`
+    ? `\n\nฉากปัจจุบันของฉากหลังคือ "${activeSceneLabel}" ให้ใช้เป็นฉากหลังตามธรรมชาติโดยไม่ต้องรายงานระบบฉาก. ไม่จำเป็นต้องพูดถึงชื่อฉากทุกครั้ง: ให้พูดถึง "ที่นี่" หรือ "ตรงนี้" เป็นหลัก และพูดชื่อฉากเฉพาะเมื่อผู้ใช้ถามถึงสถานที่ ชวนเปลี่ยนที่ หรือบริบทต้องการจริง. ห้ามย้ำชื่อฉากเดิมซ้ำติดกัน และไม่ต้องมีฉากใหม่เมื่อผู้ใช้ไม่ได้ชวนเปลี่ยน`
     : "";
   const systemPrompt = personalityPrompt(state, memoryContext, toolContext, state.conversationSummary, idle, character, personality, characterName, language, visionIdle) + sceneContextBlock + plan.responseHint + vivianTurnPrompt(customInstructions) + languageLock(language);
   const promptContents: ProviderMessage[] = greeting

@@ -560,7 +560,7 @@ test("explicit scene name switches even when JEV under-scores or is disabled", a
   const lowBody = await (await low.post("ไปคาเฟ่กันเถอะ")).json();
   assert.equal(lowBody.scene.id, mansionCatalog[1].id);
 });
-test("Vivian naming the scene in her reply switches it the same turn, and she is told where she is", async () => {
+test("Vivian naming the scene in her reply switches it the same turn, and she is told where she is without repeating the name", async () => {
   const reply = chatFixture({
     sceneContext: mansionContext,
     jevFetch: async () => Response.json(sceneAnswers([0.01, 0.01])),
@@ -574,6 +574,19 @@ test("Vivian naming the scene in her reply switches it the same turn, and she is
   const prompt = home.calls.find((call) => call.kind === "groq").body.messages[0].content;
   assert.match(prompt, /คฤหาสน์/);
   assert.match(prompt, /ฉากปัจจุบัน/);
+  assert.match(prompt, /ไม่จำเป็นต้องพูดถึงชื่อฉากทุกครั้ง/);
+  assert.doesNotMatch(prompt, /กลับมาถึง/);
+});
+test("partial scene names, negation and overlapping scenes resolve without guessing", () => {
+  const bedroom = [{ id: "bd-1", label: "ห้องนอนตอนกลางคืน" }, { id: "cf-1", label: "คาเฟ่" }];
+  assert.equal(scenes.findSceneLabelMatch(["ไปห้องนอนกัน"], bedroom, null), "bd-1");
+  assert.equal(scenes.findSceneLabelMatch(["ไม่อยากไปคฤหาสน์"], mansionCatalog, null), null);
+  assert.equal(scenes.findSceneLabelMatch(["อย่าไปคาเฟ่"], mansionCatalog, null), null);
+  const overlap = [{ id: "n1", label: "ห้องนอนตอนกลางคืน" }, { id: "n2", label: "ห้องนอนตอนเช้า" }];
+  // Both share the "ห้องนอน" core, so a bare mention must not guess.
+  assert.equal(scenes.findSceneLabelMatch(["ไปห้องนอนกัน"], overlap, null), null);
+  // A full qualifier separates them.
+  assert.equal(scenes.findSceneLabelMatch(["ไปห้องนอนตอนเช้ากัน"], overlap, null), "n2");
 });
 
 
