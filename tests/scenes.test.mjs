@@ -154,6 +154,14 @@ test("default selection and Auto Scene OFF persist without losing the manual sce
   const preset = await f.module.setScenePreferences(f.db, owner, { preset: "night" }); assert.equal(preset.activeSceneId, null); assert.equal(preset.preset, "night");
   assert.equal(await f.module.loadSceneContext(owner), null);
 });
+test("selecting a custom scene with preset:null persists instead of 'Invalid default scene'", async () => {
+  const f = storeFixture(); const scene = await create(f);
+  await f.module.setScenePreferences(f.db, owner, { preset: "day" });
+  const selected = await f.module.setScenePreferences(f.db, owner, { activeSceneId: scene.id, preset: null });
+  assert.equal(selected.activeSceneId, scene.id); assert.equal(selected.preset, null);
+  const toggled = await f.module.setScenePreferences(f.db, owner, { autoScene: true }); assert.equal(toggled.activeSceneId, scene.id);
+  assert.equal((await f.module.loadSceneContext(owner)).activeSceneId, scene.id);
+});
 test("storage, thumbnail and record creation failures cannot leave broken scenes or untracked objects", async () => {
   for (const failure of ["upload", "thumbnail", "vivian_scenes:insert"]) {
     const f = storeFixture(); f.fail(failure); await assert.rejects(create(f)); assert.equal(f.rows.vivian_scenes.length, 0); assert.equal(f.objects.size, 0);

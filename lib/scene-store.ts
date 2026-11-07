@@ -124,8 +124,17 @@ export async function setScenePreferences(db: SupabaseClient, userId: string, va
     changes.preset = null;
   }
   if ("preset" in body) {
-    if (!["day", "night"].includes(body.preset as string)) throw new SceneError("Invalid default scene.");
-    changes.preset = body.preset; changes.active_scene_id = null;
+    // `preset: null` means "clear the default preset" (the client sends it
+    // whenever a custom scene is selected). It must not be treated as an
+    // invalid preset, and it must not clear an activeSceneId that was set
+    // in the same patch.
+    if (body.preset === null) {
+      changes.preset = null;
+    } else if (["day", "night"].includes(body.preset as string)) {
+      changes.preset = body.preset; changes.active_scene_id = null;
+    } else {
+      throw new SceneError("Invalid default scene.");
+    }
   }
   if (Object.keys(changes).length === 3) throw new SceneError("No scene settings supplied.");
   // Ensure row exists, then update only supplied fields; upsert partial rows

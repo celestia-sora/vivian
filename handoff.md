@@ -580,3 +580,8 @@ Follow up only where needed: verify live Google provider configuration and produ
 - Vivian over-emphasised the active scene name because the prompt gave a scripted example. It now says the label is only a quiet stage backdrop, prefers "ที่นี่/ตรงนี้", and mentions the name only when asked, invited to move, or truly needed — never repeated every sentence.
 - `findSceneLabelMatch` now scores instead of longest-only: exact mentions win (longest, then latest destination), then anchor-word and absolute-substring partials can find a longer label from its core name. Negated mentions are ignored, and a tie across overlapping labels returns nothing instead of guessing, so a library with many scenes no longer picks the wrong room or the first overlapping name.
 - Verification: `npx tsc --noEmit`, `npm run build`, `git diff --check`, `npm run test:companion` 7/7, `npm run test:scenes` 19/19, `tests/live2d-emotion.test.mjs` 4/4, and the new `partial scene names, negation and overlapping scenes` / `Vivian naming ... without repeating the name` JEV tests; the full JEV suite keeps only the 6 pre-existing failures.
+
+# Fix: preset:null rejected as Invalid default scene - 2026-11-07
+
+- Selecting any custom scene sent `{ activeSceneId, preset: null }` to `PATCH /api/scenes/preferences`, but `setScenePreferences` rejected `preset: null` with "Invalid default scene", so the scene only showed locally. The server now treats `preset: null` as an explicit clear that never clears the `activeSceneId` set in the same patch.
+- Verification: `npx tsc --noEmit`, `npm run build`, `git diff --check`, `npm run test:scenes` 20/20 (including the new `selecting a custom scene with preset:null persists` regression), `npm run test:companion` 7/7, `tests/live2d-emotion.test.mjs` 4/4.
