@@ -18,6 +18,7 @@ export function cloudModelPlaceholder(model: CloudModel): ModelPackage {
   return { id: model.id, assets: [], ...(model.scope === "shared" ? { cloudOwner: SHARED_MODEL_OWNER } : {}), models: model.manifests.map((entry) => ({ id: `${model.id}:${entry.path}`, name: entry.name, manifestPath: entry.path, expressions: [], poses: [], motions: [] })) };
 }
 export const saveCloudModelPreference = (modelId: string): Promise<{ preference: CloudModelPreference }> => json("/api/models/preference", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelId }) });
+export const saveCloudModelExpressions = (modelId: string, manifestPath: string, expressions: string[]): Promise<{ expressions: string[] }> => json(`/api/models/${encodeURIComponent(modelId)}/expressions`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ manifestPath, expressions }) });
 export async function modelArchive(pack: ModelPackage, originalZip?: File): Promise<Blob> {
   if (originalZip) {
     if (originalZip.size > MODEL_MAX_BYTES) throw new Error("Model ZIP exceeds 512 MiB.");

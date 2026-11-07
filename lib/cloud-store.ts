@@ -70,7 +70,7 @@ export async function readableModel(db: SupabaseClient, userId: string, id: stri
   if (row.state === "ready" && row.library_scope === "shared" && sharedModelLibrary()) return row;
   throw new StorageError("Model not found.", 404);
 }
-function present(row: StorageObject): CloudModel { return { id: row.id, byteSize: Number(row.byte_size), manifests: modelManifests(row.metadata.manifests), scope: row.library_scope ?? "private" }; }
+function present(row: StorageObject, expressionPreferences?: Record<string, string[]>): CloudModel { return { id: row.id, byteSize: Number(row.byte_size), manifests: modelManifests(row.metadata.manifests), ...(expressionPreferences ? { expressionPreferences } : {}), scope: row.library_scope ?? "private" }; }
 export async function cloudModels(db: SupabaseClient, userId: string) {
   r2Configuration();
   const own = await db.from("vivian_storage_objects").select("*").eq("user_id", userId).eq("category", "live2d").eq("state", "ready").order("created_at", { ascending: true }); check(own.error);
@@ -85,13 +85,36 @@ export async function cloudModels(db: SupabaseClient, userId: string) {
     } else if (!missingSharedSupport(shared.error)) check(shared.error);
   }
   rows.sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const expressionPreferences: Record<string, Record<string, string[]>> = {};
+  if (rows.length) {
+    const saved = await db.from("vivian_model_expression_preferences").select("model_id,manifest_path,expressions").eq("user_id", userId).in("model_id", rows.map((row) => row.id));
+    if (saved.error && saved.error.code !== "42P01" && saved.error.code !== "PGRST205") check(saved.error);
+    for (const item of (saved.data ?? []) as Array<{ model_id: string; manifest_path: string; expressions: unknown }>) {
+      if (!Array.isArray(item.expressions) || item.expressions.some((name) => typeof name !== "string")) continue;
+      (expressionPreferences[item.model_id] ??= {})[item.manifest_path] = item.expressions as string[];
+    }
+  }
   const preferenceResult = await db.from("vivian_model_preferences").select("selected_model_id,last_selected_at,revision").eq("id", "global").maybeSingle();
   if (preferenceResult.error && !missingSharedSupport(preferenceResult.error)) check(preferenceResult.error);
   const preferenceRow = preferenceResult.data as { selected_model_id: string; last_selected_at: string; revision: string } | null;
   const preference = preferenceRow && rows.some((row) => row.id === preferenceRow.selected_model_id.split(":", 1)[0])
     ? { modelId: preferenceRow.selected_model_id, lastSelectedAt: preferenceRow.last_selected_at, revision: preferenceRow.revision }
     : null;
-  return { userId, models: rows.map(present), usage: await storageUsage(db), preference };
+  return { userId, models: rows.map((row) => present(row, expressionPreferences[row.id])), usage: await storageUsage(db), preference };
+}
+export async function saveCloudModelExpressions(db: SupabaseClient, userId: string, idValue: string, input: unknown): Promise<{ expressions: string[] }> {
+  const id = storageId(idValue);
+  const row = await readableModel(db, userId, id);
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new StorageError("Invalid expression preferences.");
+  const body = input as Record<string, unknown>;
+  const manifestPath = body.manifestPath;
+  const expressions = body.expressions;
+  if (typeof manifestPath !== "string" || !modelManifests(row.metadata.manifests).some((manifest) => manifest.path === manifestPath)) throw new StorageError("Model manifest not found.", 404);
+  if (!Array.isArray(expressions) || expressions.length > 128 || expressions.some((name) => typeof name !== "string" || !name.trim() || name.length > 200) || new Set(expressions).size !== expressions.length) throw new StorageError("Invalid expression preferences.");
+  const saved = await db.from("vivian_model_expression_preferences").upsert({ user_id: userId, model_id: id, manifest_path: manifestPath, expressions, updated_at: new Date().toISOString() }, { onConflict: "user_id,model_id,manifest_path" }).select("expressions").single();
+  check(saved.error);
+  if (!saved.data) throw new StorageError("Expression preferences could not be saved.", 503);
+  return { expressions: saved.data.expressions as string[] };
 }
 export async function saveCloudModelPreference(db: SupabaseClient, userId: string, input: unknown): Promise<ModelPreference> {
   if (typeof input !== "string" || input.length > 2048 || !input.includes(":")) throw new StorageError("Invalid model selection.", 400);

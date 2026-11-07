@@ -22,6 +22,7 @@ export async function cloudApi(request: Request, action: (db: SupabaseClient, us
     response.headers.set("Cache-Control", "private, no-store");
     const pathname = new URL(request.url).pathname;
     const modelMutation = pathname === "/api/models/preference" && request.method === "PATCH"
+      || /^\/api\/models\/[^/]+\/expressions$/.test(pathname) && request.method === "PATCH"
       || /^\/api\/models\/[^/]+$/.test(pathname) && ["POST", "DELETE"].includes(request.method);
     if (response.ok && modelMutation) {
       after(() => publishModelLibraryChange());

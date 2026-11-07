@@ -8,7 +8,7 @@ export const MODEL_MAX_BYTES = 512 * 1024 * 1024;
 export const MODEL_PART_BYTES = 16 * 1024 * 1024;
 export type StorageCategory = keyof typeof STORAGE_LIMITS;
 export interface StorageUsage { live2d: { used: number; limit: number }; other: { used: number; limit: number } }
-export interface CloudModel { id: string; byteSize: number; manifests: Array<{ path: string; name: string }>; scope?: "private" | "shared" }
+export interface CloudModel { id: string; byteSize: number; manifests: Array<{ path: string; name: string }>; expressionPreferences?: Record<string, string[]>; scope?: "private" | "shared" }
 export class StorageError extends Error {
   constructor(message: string, public status = 400) { super(message); }
 }

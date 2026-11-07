@@ -19,9 +19,10 @@ import { historyMessage, HISTORY_CACHE_KEY, type HistoryMessage, type HistoryCon
 import { authFetch } from "@/lib/auth/fetch";
 import { decayCompanionState, type CompanionState, defaultCompanionState, normalizeMood, moodLabel, type Mood } from "@/lib/companion";
 import { detectLive2DEmotion, resolveLive2DExpression, resolveLive2DMotion } from "@/lib/live2d-emotion";
+import { createSavedExpressionStack, SAVED_EXPRESSION_STACK_FILE, SAVED_EXPRESSION_STACK_NAME } from "@/lib/live2d-expression-stack";
 import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
 import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, readModelSelection, resolveStartupModel, writeModelSelection, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
-import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, saveCloudModelPreference, type CloudLibrary } from "@/lib/cloud-models";
+import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, saveCloudModelPreference, saveCloudModelExpressions, type CloudLibrary } from "@/lib/cloud-models";
 import { useVoicePreferences } from "@/lib/use-voice-preferences";
 import { useCustomInstructions } from "@/lib/use-custom-instructions";
 import type { SpeechLanguage } from "@/lib/voice-preferences";
@@ -70,6 +71,9 @@ function isModelVisible(pack: ModelPackage, accountId: string): boolean {
   return !pack.cloudOwner || pack.cloudOwner === accountId || pack.cloudOwner === "shared";
 }
 const CONVERSATIONS_KEY = HISTORY_CACHE_KEY;
+function modelExpressionPreferenceKey(packageId: string, manifestPath: string): string {
+  return `vivian-model-expressions:${packageId}:${manifestPath}`;
+}
 const LANGUAGE_OPTIONS: Array<{ code: SpeechLanguage; label: string; nativeName: string }> = [
   { code: "global", label: "ทุกภาษา", nativeName: "Global" },
   { code: "th", label: "Thai", nativeName: "TH" },
@@ -293,6 +297,13 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelPaused, setModelPaused] = useState(false);
   const [textureSummary, setTextureSummary] = useState<string | null>(null);
   const [activeExpression, setActiveExpression] = useState<string | null>(null);
+  const [activeExpressions, setActiveExpressions] = useState<string[]>([]);
+  const [activeExpressionsModelId, setActiveExpressionsModelId] = useState<string | null>(null);
+  const activeExpressionsRef = useRef<string[]>([]);
+  const activeExpressionModelRef = useRef<string | null>(null);
+  const pendingExpressionPreferencesRef = useRef(new Map<string, string[]>());
+  const expressionSaveQueuesRef = useRef(new Map<string, Promise<void>>());
+  const expressionSaveVersionsRef = useRef(new Map<string, number>());
   const [activeMotion, setActiveMotion] = useState<string | null>(null);
   const modelFolderRef = useRef<HTMLInputElement>(null);
   const activePackage = modelPackages.find((pack) => pack.models.some((model) => model.id === activeModelId));
@@ -756,6 +767,55 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
   }
 
+  function toggleSavedExpression(expression: string) {
+    if (!activeModel || !activePackage || !activeModel.expressions.includes(expression)) return;
+    const current = activeExpressionModelRef.current === activeModel.id ? activeExpressionsRef.current : [];
+    const next = current.includes(expression) ? current.filter((item) => item !== expression) : [...current, expression];
+    if (next.length > 128) { setModelNotice("Choose up to 128 expressions for one model."); return; }
+    saveExpressionSelection(next);
+  }
+
+  function saveExpressionSelection(next: string[]) {
+    if (!activeModel || !activePackage) return;
+    const key = modelExpressionPreferenceKey(activePackage.id, activeModel.manifestPath);
+    activeExpressionModelRef.current = activeModel.id;
+    activeExpressionsRef.current = next;
+    setActiveExpressionsModelId(activeModel.id);
+    pendingExpressionPreferencesRef.current.set(key, next);
+    setActiveExpressions(next);
+    setActiveExpression(null);
+    setModelNotice(null);
+    try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* Cloud preference remains available when configured. */ }
+    setModelReload((value) => value + 1);
+
+    if (!cloudLibraryRef.current?.models.some((model) => model.id === activePackage.id)) return;
+    const saveVersion = (expressionSaveVersionsRef.current.get(key) ?? 0) + 1;
+    expressionSaveVersionsRef.current.set(key, saveVersion);
+    const previousSave = expressionSaveQueuesRef.current.get(key) ?? Promise.resolve();
+    const request = previousSave.catch(() => {}).then(() => saveCloudModelExpressions(activePackage.id, activeModel.manifestPath, next));
+    expressionSaveQueuesRef.current.set(key, request.then(() => {}, () => {}));
+    void request.then((result) => {
+      if (expressionSaveVersionsRef.current.get(key) !== saveVersion) return;
+      pendingExpressionPreferencesRef.current.set(key, result.expressions);
+      const currentLibrary = cloudLibraryRef.current;
+      if (!currentLibrary) return;
+      const updated: CloudLibrary = {
+        ...currentLibrary,
+        models: currentLibrary.models.map((model) => model.id === activePackage.id
+          ? { ...model, expressionPreferences: { ...model.expressionPreferences, [activeModel.manifestPath]: result.expressions } }
+          : model),
+      };
+      cloudLibraryRef.current = updated;
+      setCloudLibrary(updated);
+    }).catch(() => { if (expressionSaveVersionsRef.current.get(key) === saveVersion) setModelNotice("Saved on this device; cloud sync is unavailable."); });
+  }
+
+  function clearSavedExpressions() {
+    const selected = activeExpressionModelRef.current === activeModel?.id ? activeExpressionsRef.current : [];
+    if (!selected.length) { resetReaction(); return; }
+    saveExpressionSelection([]);
+  }
+
   async function selectMotion(motion: ModelMotion | null) {
     const actionId = ++motionActionRef.current;
     const loadId = modelLoadIdRef.current;
@@ -916,6 +976,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     const textureAbort = new AbortController();
     modelRenderAbortRef.current = textureAbort;
     let releaseResources: (() => void) | undefined;
+    let compositeExpressionUrl: string | undefined;
     let app: any;
     let resizeModel = () => {};
     let queueResize = () => {};
@@ -987,6 +1048,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         }
         const renderModel = renderPackage.models.find((entry) => entry.id === activeModel.id || entry.manifestPath === activeModel.manifestPath);
         if (!renderModel) throw new Error("Model selection has changed. Please select the model again.");
+        const preferenceKey = modelExpressionPreferenceKey(renderPackage.id, renderModel.manifestPath);
+        const pendingExpressions = pendingExpressionPreferencesRef.current.get(preferenceKey);
+        const cloudModel = cloudLibraryRef.current?.models.find((entry) => entry.id === renderPackage.id);
+        const cloudHasPreference = Boolean(cloudModel?.expressionPreferences && Object.prototype.hasOwnProperty.call(cloudModel.expressionPreferences, renderModel.manifestPath));
+        let savedExpressions = pendingExpressions ?? (cloudHasPreference ? cloudModel!.expressionPreferences![renderModel.manifestPath] : undefined);
+        if (!savedExpressions) {
+          try {
+            const cached = JSON.parse(localStorage.getItem(preferenceKey) ?? "null");
+            if (Array.isArray(cached) && cached.every((name) => typeof name === "string")) savedExpressions = cached;
+          } catch { /* Optional local preference cache. */ }
+        }
+        const selectedExpressions = [...new Set((savedExpressions ?? []).filter((name) => renderModel.expressions.includes(name)))];
+        activeExpressionsRef.current = selectedExpressions;
+        activeExpressionModelRef.current = renderModel.id;
+        setActiveExpressions(selectedExpressions);
+        setActiveExpressionsModelId(renderModel.id);
+        const shouldApplyStack = selectedExpressions.length > 0;
         renderTiming = startTiming("model_load_to_first_frame");
         const resources = await createModelResources(renderPackage, renderModel, {
           // GPU limits alone do not account for framebuffers, decoded images,
@@ -996,21 +1074,37 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           original: textureQuality === "original",
           signal: textureAbort.signal,
         });
-        releaseResources = resources.dispose;
-        if (disposed || loadId !== modelLoadIdRef.current) { resources.dispose(); return; }
-        const settings = new Cubism4ModelSettings(resources.manifest);
-        settings.resolveURL = resources.resolve;
+        releaseResources = () => {
+          resources.dispose();
+          if (compositeExpressionUrl) { URL.revokeObjectURL(compositeExpressionUrl); compositeExpressionUrl = undefined; }
+        };
+        if (disposed || loadId !== modelLoadIdRef.current) { releaseResources(); return; }
+        let manifest = resources.manifest;
+        let resolveModelAsset = resources.resolve;
+        if (shouldApplyStack) {
+          const stack = await createSavedExpressionStack(resources.manifest.FileReferences.Expressions ?? [], selectedExpressions, resources.resolve);
+          if (stack) {
+            compositeExpressionUrl = URL.createObjectURL(stack);
+            const expressions = (resources.manifest.FileReferences.Expressions ?? []).filter((item) => item.Name !== SAVED_EXPRESSION_STACK_NAME);
+            manifest = { ...resources.manifest, FileReferences: { ...resources.manifest.FileReferences, Expressions: [...expressions, { Name: SAVED_EXPRESSION_STACK_NAME, File: SAVED_EXPRESSION_STACK_FILE }] } };
+            resolveModelAsset = (reference) => reference === SAVED_EXPRESSION_STACK_FILE ? compositeExpressionUrl! : resources.resolve(reference);
+          }
+        }
+        const settings = new Cubism4ModelSettings(manifest);
+        settings.resolveURL = resolveModelAsset;
         const model = await Live2DModel.from(settings, { autoInteract: false });
+        ownedModel = model;
         if (disposed || loadId !== modelLoadIdRef.current) {
           model.destroy({ children: true, texture: true, baseTexture: true });
-          resources.dispose();
+          ownedModel = undefined;
+          releaseResources();
           return;
         }
+        if (shouldApplyStack && !await model.expression(SAVED_EXPRESSION_STACK_NAME)) throw new Error("Could not apply saved expressions.");
         if (canvasRef.current) {
           const stopWind = attachModelWind(canvasRef.current, model.internalModel as unknown as WindInternalModel);
           model.once("destroy", stopWind);
         }
-        ownedModel = model;
         for (const texture of model.textures) {
           if (!texture.valid) throw new Error("A model texture did not finish loading. Please reload the model.");
           texture.baseTexture.mipmap = PIXI.MIPMAP_MODES.OFF;
@@ -1072,7 +1166,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           window.visualViewport?.removeEventListener("resize", queueResize);
           app.stage.removeChild(model);
           model.destroy({ children: true, texture: true, baseTexture: true });
-          resources.dispose();
+          releaseResources?.();
         } };
         promoted = true;
         previous?.dispose();
@@ -1165,7 +1259,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         releaseResources?.();
       }
     };
-  }, [preferencesReady, modelsReady, activeModel, activePackage, textureQuality, modelReload, graphicsLost, modelPaused]);
+  }, [preferencesReady, modelsReady, activeModel, activePackage, cloudLibrary, textureQuality, modelReload, graphicsLost, modelPaused]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1485,6 +1579,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         expressionManager.resetExpression();
       }
     } catch (error) { console.warn("Live2D default expression unavailable", error); }
+    const saved = activeExpressionModelRef.current === activeModelIdRef.current ? activeExpressionsRef.current : [];
+    if (saved.length) void modelRef.current?.expression(SAVED_EXPRESSION_STACK_NAME).catch((error: unknown) => console.warn("Saved Live2D expressions unavailable", error));
   }
   function stopLipSync() {
     if (lipSyncFrameRef.current !== null) cancelAnimationFrame(lipSyncFrameRef.current);
@@ -1752,7 +1848,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       return true;
     }
     if (!argument || argument.toLowerCase() === "default" || argument.toLowerCase() === "reset") {
-      resetReaction();
+      clearSavedExpressions();
       setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", "กลับเป็นค่าปกติแล้ว")]);
       return true;
     }
@@ -1763,9 +1859,9 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     }
     try {
       if (!modelRef.current) throw new Error("Live2D model is not ready");
-      await modelRef.current.expression(expression);
-      setActiveExpression(expression);
-      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", `เปลี่ยนเป็น ${expression.trim()} แล้ว`)]);
+      const selected = activeExpressionModelRef.current === activeModel?.id ? activeExpressionsRef.current : [];
+      if (!selected.includes(expression)) saveExpressionSelection([...selected, expression]);
+      setMessages((current) => [...current, historyMessage("me", text), historyMessage("vivian", `จำ ${expression.trim()} ไว้แล้ว`)]);
     } catch (error) {
       console.warn("Manual Live2D expression unavailable", error);
       resetReaction();
@@ -2548,13 +2644,14 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                 {activePackage && <button className="floating-option model-remove" type="button" disabled={modelImporting} onClick={() => { void removeActiveModel(); }}>{cloudLibrary?.models.some((model) => model.id === activePackage.id) ? "Delete this package from cloud and this device" : "Remove this package from browser"}</button>}
               </>}
               {characterTab === "expression" && <>
-                <button type="button" className="floating-option" disabled={modelStatus !== "ready"} onClick={() => { void selectExpression(null); }}>Reset expression</button>
-                <div className="expression-grid">{activeModel?.expressions.map((expression, index) => <button type="button" key={`${expression}:${index}`} disabled={modelStatus !== "ready"} aria-pressed={activeExpression === expression} onClick={() => { void selectExpression(activeExpression === expression ? null : expression); }}>{expression.trim()}</button>)}</div>
+                <button type="button" className="floating-option" disabled={modelStatus !== "ready" || !activeExpressions.length} onClick={clearSavedExpressions}>Reset saved expressions</button>
+                <p className="floating-note">Choose one or more expressions. Vivian will restore the combined selection when this model loads.</p>
+                <div className="expression-grid">{activeModel?.expressions.map((expression, index) => <button type="button" key={`${expression}:${index}`} disabled={modelStatus !== "ready"} aria-pressed={activeExpressionsModelId === activeModel.id && activeExpressions.includes(expression)} onClick={() => toggleSavedExpression(expression)}>{expression.trim()}</button>)}</div>
                 {!activeModel?.expressions.length && <p className="floating-note">{activeModel ? "This model does not include expressions." : "Import a model in Models to discover its expressions."}</p>}
               </>}
               {characterTab === "pose" && <>
                 <button type="button" className="floating-option" disabled={modelStatus !== "ready"} onClick={() => { resetReaction(); void selectMotion(null); }}>Reset to idle pose</button>
-                {!!activeModel?.poses?.length && <><p className="floating-note">Poses</p><div className="expression-grid">{activeModel.poses.map((pose) => <button type="button" key={pose} disabled={modelStatus !== "ready"} aria-pressed={activeExpression === pose} onClick={() => { void selectExpression(activeExpression === pose ? null : pose); }}>{pose}</button>)}</div></>}
+                {!!activeModel?.poses?.length && <><p className="floating-note">Poses</p><div className="expression-grid">{activeModel.poses.map((pose) => <button type="button" key={pose} disabled={modelStatus !== "ready"} aria-pressed={activeExpressionsModelId === activeModel.id && activeExpressions.includes(pose)} onClick={() => toggleSavedExpression(pose)}>{pose}</button>)}</div></>}
                 {[...new Set(activeModel?.motions.map((motion) => motion.group) ?? [])].map((group) => <div className="model-motion-group" key={group}><p className="floating-note">{group || "Default"}</p><div className="expression-grid">{activeModel?.motions.filter((motion) => motion.group === group).map((motion) => <button type="button" key={motion.index} disabled={modelStatus !== "ready"} aria-pressed={activeMotion === `${group}:${motion.index}`} onClick={() => { if (activeMotion === `${group}:${motion.index}`) { resetReaction(); void selectMotion(null); } else void selectMotion(motion); }}>{motion.name}</button>)}</div></div>)}
                 {!activeModel?.motions.length && !activeModel?.poses?.length && <p className="floating-note">{activeModel ? "This model does not include playable motions." : "Import a model in Models to discover its motions."}</p>}
               </>}
