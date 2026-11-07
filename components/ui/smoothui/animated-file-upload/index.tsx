@@ -5,6 +5,11 @@ import { cn } from "@/lib/utils";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useRef, useState } from "react";
 
+export interface AnimatedFileUploadProgress {
+  label: string;
+  percent: number | null;
+}
+
 export interface AnimatedFileUploadProps {
   accept?: string;
   className?: string;
@@ -12,6 +17,7 @@ export interface AnimatedFileUploadProps {
   maxSize?: number;
   multiple?: boolean;
   onFilesSelected: (files: File[]) => void;
+  progress?: AnimatedFileUploadProgress | null;
 }
 
 /* ─────────────────────────────────────────────────────────
@@ -107,6 +113,7 @@ export default function AnimatedFileUpload({
   maxSize,
   className,
   disabled = false,
+  progress = null,
 }: AnimatedFileUploadProps) {
   const shouldReduceMotion = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -315,7 +322,7 @@ export default function AnimatedFileUpload({
                     ? { opacity: 1 }
                     : { opacity: 1, scale: 1, x: 0 }
                 }
-                className="flex items-center gap-3 rounded-md border bg-muted/50 px-3 py-2"
+                className="flex flex-col gap-2 rounded-md border bg-muted/50 px-3 py-2"
                 exit={
                   shouldReduceMotion
                     ? { opacity: 0, transition: { duration: 0 } }
@@ -335,41 +342,67 @@ export default function AnimatedFileUpload({
                 layout={!shouldReduceMotion}
                 transition={shouldReduceMotion ? { duration: 0 } : SPRING}
               >
-                <FileIcon />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-foreground text-sm">
-                    {file.name}
-                  </p>
-                  <p className="text-muted-foreground text-xs">
-                    {formatFileSize(file.size)}
-                  </p>
-                </div>
-                <SmoothButton
-                  aria-label={`Remove ${file.name}`}
-                  className="shrink-0 text-muted-foreground"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeFile(index);
-                  }}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <svg
-                    aria-hidden="true"
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                    viewBox="0 0 24 24"
+                <div className="flex items-center gap-3">
+                  <FileIcon />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-foreground text-sm">
+                      {file.name}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {formatFileSize(file.size)}
+                    </p>
+                  </div>
+                  <SmoothButton
+                    aria-label={`Remove ${file.name}`}
+                    className="shrink-0 text-muted-foreground"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeFile(index);
+                    }}
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
                   >
-                    <path
-                      d="M6 18L18 6M6 6l12 12"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </SmoothButton>
+                    <svg
+                      aria-hidden="true"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        d="M6 18L18 6M6 6l12 12"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </SmoothButton>
+                </div>
+                {progress && index === 0 && (
+                  <div className="vivian-upload-progress">
+                    <div className="vivian-upload-progress-head">
+                      <strong aria-live="polite">{progress.label}</strong>
+                      {typeof progress.percent === "number" && (
+                        <span>{progress.percent}%</span>
+                      )}
+                    </div>
+                    <div
+                      className={`vivian-upload-progress-track${typeof progress.percent === "number" ? " is-determinate" : " is-indeterminate"}`}
+                      role="progressbar"
+                      aria-label={progress.label}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={typeof progress.percent === "number" ? progress.percent : undefined}
+                      aria-valuetext={typeof progress.percent === "number" ? `${progress.percent}%` : undefined}
+                    >
+                      <span
+                        className="vivian-upload-progress-fill"
+                        style={typeof progress.percent === "number" ? { width: `${progress.percent}%` } : undefined}
+                      />
+                    </div>
+                  </div>
+                )}
               </motion.li>
             ))}
           </AnimatePresence>

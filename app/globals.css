@@ -332,19 +332,19 @@ button { cursor: pointer; }
 .model-import-progress-head strong { min-width: 0; overflow-wrap: anywhere; color: #241329; font-weight: 500; }
 .model-import-progress-head span { flex: 0 0 auto; color: #7c6aa8; font-variant-numeric: tabular-nums; }
 .model-import-track { position: relative; height: 8px; overflow: hidden; border-radius: 999px; background: rgb(36 19 41 / .1); }
-.model-import-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width .32s ease; }
+.model-import-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1); }
 .model-import-track.is-determinate::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 25%, rgb(255 255 255 / .55) 50%, transparent 75%); animation: model-import-sheen 1.4s ease-in-out infinite; }
 .model-import-track.is-indeterminate .model-import-fill { width: 40%; animation: model-import-slide 1.25s cubic-bezier(.4, 0, .2, 1) infinite; }
 .floating-panel-loadbar { flex: 0 0 auto; height: 3px; margin: 6px 17px 0; overflow: hidden; border-radius: 999px; background: rgb(36 19 41 / .08); }
-.floating-panel-loadbar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width .32s ease; }
+.floating-panel-loadbar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1); }
 .floating-panel-loadbar.is-indeterminate span { width: 40%; animation: model-import-slide 1.25s cubic-bezier(.4, 0, .2, 1) infinite; }
 @keyframes model-import-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
 @keyframes model-import-slide { from { transform: translateX(-110%); } to { transform: translateX(360%); } }
 @keyframes model-import-breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .model-import-fill, .floating-panel-loadbar span { transition: none; }
-  .model-import-track.is-determinate::after { opacity: .35; animation: none; }
-  .model-import-track.is-indeterminate .model-import-fill, .floating-panel-loadbar.is-indeterminate span { width: 100%; animation: model-import-breathe 1.6s ease-in-out infinite; }
+  .model-import-fill, .floating-panel-loadbar span, .vivian-upload-progress-fill { transition: none; }
+  .model-import-track.is-determinate::after, .vivian-upload-progress-track.is-determinate::after { opacity: .35; animation: none; }
+  .model-import-track.is-indeterminate .model-import-fill, .floating-panel-loadbar.is-indeterminate span, .vivian-upload-progress-track.is-indeterminate .vivian-upload-progress-fill { width: 100%; animation: model-import-breathe 1.6s ease-in-out infinite; }
 }
 
 /* Scene library reuses the existing floating workspace and control palette. */
@@ -367,6 +367,14 @@ button { cursor: pointer; }
 .vivian-upload ul { margin: 0; padding: 0; list-style: none; }
 .vivian-upload ul li { border-color: #24132926; background: rgb(255 255 255 / .5); }
 .vivian-upload ul li button { color: #241329; }
+.vivian-upload-progress { display: grid; gap: 6px; margin-top: 2px; color: #5f5470; font: 12px/1.45 system-ui, sans-serif; }
+.vivian-upload-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.vivian-upload-progress-head strong { min-width: 0; overflow-wrap: anywhere; color: #241329; font-weight: 500; }
+.vivian-upload-progress-head span { flex: 0 0 auto; color: #7c6aa8; font-variant-numeric: tabular-nums; }
+.vivian-upload-progress-track { position: relative; height: 8px; overflow: hidden; border-radius: 999px; background: rgb(36 19 41 / .1); }
+.vivian-upload-progress-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1); }
+.vivian-upload-progress-track.is-determinate::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 25%, rgb(255 255 255 / .55) 50%, transparent 75%); animation: model-import-sheen 1.4s ease-in-out infinite; }
+.vivian-upload-progress-track.is-indeterminate .vivian-upload-progress-fill { width: 40%; animation: model-import-slide 1.25s cubic-bezier(.4, 0, .2, 1) infinite; }
 .scene-preview img { display: block; width: 100%; max-height: 180px; object-fit: contain; border-radius: 10px; }
 .scene-editor-actions { display: flex; gap: 8px; margin-top: 14px; }
 .scene-editor-actions button { flex: 1; text-align: center; }
