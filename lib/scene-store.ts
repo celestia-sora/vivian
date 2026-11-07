@@ -134,6 +134,20 @@ export async function setScenePreferences(db: SupabaseClient, userId: string, va
   const { data, error } = await db.from("vivian_scene_preferences").update(changes).eq("user_id", userId).select("*").single(); check(error);
   return preferences(data);
 }
+export async function getSceneImagePublic(db: SupabaseClient, id: string, thumbnail: boolean): Promise<Blob> {
+  // Public scene images: anyone with the scene id can fetch the image.
+  // Listing/saving/deleting remain authenticated in their own routes.
+  validateSceneId(id);
+  const { data: scene, error } = await db.from("vivian_scenes").select(COLUMNS).eq("id", id).maybeSingle();
+  if (error) throw new SceneError("Scene image unavailable.", 503);
+  if (!scene) throw new SceneError("Scene not found.", 404);
+  const row = scene as SceneRow;
+  if (row.storage_provider === "r2") return getR2Image(objectKeys(row.image_key)[thumbnail ? 1 : 0]);
+  const { data, error: downloadError } = await db.storage.from(BUCKET).download(objectKeys(row.image_key)[thumbnail ? 1 : 0]);
+  if (downloadError) throw new SceneError("Scene image unavailable.", 503);
+  if (!data) throw new SceneError("Scene image unavailable.", 404);
+  return data;
+}
 export async function getSceneImage(db: SupabaseClient, userId: string, id: string, thumbnail: boolean): Promise<Blob> {
   const scene = await getScene(db, userId, id);
   if (scene.storage_provider === "r2") return getR2Image(objectKeys(scene.image_key)[thumbnail ? 1 : 0]);
