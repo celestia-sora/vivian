@@ -40,7 +40,7 @@ Tiny but important: keep secret keys in server-side environment variables. Never
 
 ## Sign-in & privacy 🔒
 
-Sign-in uses Google through Supabase. Alpha testers need a confirmed account. Configure Google sign-in and the Supabase URL and publishable key before running your own deployment. Set the Supabase Site URL to `https://vivianlabs.vercel.app` and allow the app's `/auth/callback` URL for production and local development.
+Sign-in is delegated to the Cloudflare Workers app (vivianAuth, D1-backed): `https://vivianauth.celestiasora.workers.dev`. The app validates session tokens server-side via vivianAuth's `/api/verify` (set `VIVIANAUTH_URL` + `VIVIAN_INTERNAL_TOKEN` on Vercel — same secret as on vivianAuth's Cloudflare secrets). Supabase is used only for app data (memory, chat history, scenes, voice prefs) — not for sign-in.
 
 All authorized accounts share the same cloud memories, chat history, and companion relationship state. Chat history syncs through Supabase across devices, with a browser cache for unsynced messages. Imported Live2D models stay in that browser unless you choose to save them to private cloud storage.
 

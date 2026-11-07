@@ -1,8 +1,14 @@
-import type { User } from "@supabase/supabase-js";
+// Local AuthUser shape (verified identity from vivianAuth /api/verify).
+export interface AuthUserLike {
+  email?: string | null;
+  email_confirmed_at?: string | null;
+  is_anonymous?: boolean;
+}
 
-// Temporary hackathon access: allow any Supabase-authenticated account with a
-// confirmed email. Keep rejecting anonymous and unverified identities.
-export function isAllowedUser(user: Pick<User, "email" | "email_confirmed_at" | "is_anonymous"> | null): boolean {
+// A non-anonymous account with a confirmed email can access. Anonymous
+// and unverified identities are rejected, including forged
+// user_metadata claims.
+export function isAllowedUser(user: AuthUserLike | null): boolean {
   return Boolean(user && !user.is_anonymous && user.email?.trim() && user.email_confirmed_at);
 }
 

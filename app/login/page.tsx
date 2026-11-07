@@ -1,17 +1,44 @@
-import { redirect } from "next/navigation";
-import { getAuthAccess } from "@/lib/auth/server";
-import { getAuthConfiguration } from "@/lib/auth/config";
-import LoginCard from "./login-card";
+"use client";
 
-export const dynamic = "force-dynamic";
+import { useEffect, useState } from "react";
+import { getAuthToken, setAuthToken } from "@/lib/auth/fetch";
 
-interface LoginPageProps {
-  searchParams: Promise<{ error?: string | string[] }>;
-}
+const VIVIANAUTH_LOGIN_URL = "https://vivianauth.celestiasora.workers.dev/login";
 
-export default async function LoginPage({ searchParams }: LoginPageProps): Promise<React.JSX.Element> {
-  const [{ user }, params] = await Promise.all([getAuthAccess(), searchParams]);
-  if (user) redirect("/");
-  const error = typeof params.error === "string" ? params.error : undefined;
-  return <LoginCard configuration={getAuthConfiguration()} error={error} />;
+// /login is now a hop shim. The real sign-in form lives on the Cloudflare
+// Workers app (vivianAuth). This page:
+// 1. consumes `#token=...` after a successful Cloudflare sign-in,
+// 2. stores it for API calls (authFetch sends it as Bearer),
+// 3. returns to the app — or forwards to the Cloudflare login when absent.
+export default function LoginPage(): React.JSX.Element {
+  const [phase, setPhase] = useState<"checking" | "forwarding">("checking");
+
+  useEffect(() => {
+    try {
+      const hash = window.location.hash;
+      const match = hash.match(/#token=([^&]+)/);
+      if (match?.[1]) {
+        setAuthToken(decodeURIComponent(match[1]));
+        window.history.replaceState(null, "", window.location.pathname);
+        window.location.replace("/");
+        return;
+      }
+      if (getAuthToken()) {
+        window.location.replace("/");
+        return;
+      }
+    } catch {
+      // storage unavailable — fall through to the Cloudflare login
+    }
+    setPhase("forwarding");
+    window.location.replace(VIVIANAUTH_LOGIN_URL);
+  }, []);
+
+  return (
+    <main style={{ display: "grid", placeItems: "center", minHeight: "100dvh", background: "#e0d6ff", color: "#241329" }}>
+      <p role="status" style={{ fontSize: 16 }}>
+        {phase === "forwarding" ? "กำลังพาไปหน้าล็อกอิน…" : "กำลังตรวจสอบการล็อกอิน…"}
+      </p>
+    </main>
+  );
 }

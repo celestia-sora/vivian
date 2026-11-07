@@ -153,6 +153,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T) {
 }
 
 export default function Companion({ accountEmail, accountId }: { accountEmail: string; accountId: string }) {
+  // Sign-in gate (Cloudflare flow): the bearer token lives in localStorage
+  // (vivian_auth_token). Consume `#token=...` first, then enforce login.
+  useEffect(() => {
+    try {
+      const match = window.location.hash.match(/#token=([^&]+)/);
+      if (match?.[1]) {
+        window.localStorage.setItem("vivian_auth_token", decodeURIComponent(match[1]));
+        window.history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+      if (!window.localStorage.getItem("vivian_auth_token")) {
+        window.location.replace("/login");
+      }
+    } catch {
+      // Storage unavailable — let the API 401s drive the flow
+    }
+  }, []);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const pixiAppRef = useRef<any>(null);
   const modelRef = useRef<any>(null);
@@ -2555,27 +2573,11 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                     if (!zip) return;
                     void importModels([zip]).finally(() => setModelUploadKey((value) => value + 1));
                   }}
+                  progress={modelImporting ? modelImportProgress : null}
                 />
                 <div className="model-import-actions">
                   <button className="floating-option" type="button" disabled={modelImporting || !modelsReady} onClick={() => modelFolderRef.current?.click()}>Choose an unpacked folder instead</button>
                 </div>
-                {modelImporting && <div className="model-import-progress">
-                  <div className="model-import-progress-head">
-                    <strong aria-live="polite">{modelImportProgress?.label ?? "Importing model…"}</strong>
-                    {typeof modelImportProgress?.percent === "number" && <span>{modelImportProgress.percent}%</span>}
-                  </div>
-                  <div
-                    className={`model-import-track${typeof modelImportProgress?.percent === "number" ? " is-determinate" : " is-indeterminate"}`}
-                    role="progressbar"
-                    aria-label={modelImportProgress?.label ?? "Importing model"}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={typeof modelImportProgress?.percent === "number" ? modelImportProgress.percent : undefined}
-                    aria-valuetext={typeof modelImportProgress?.percent === "number" ? `${modelImportProgress.percent}%` : undefined}
-                  >
-                    <span className="model-import-fill" style={typeof modelImportProgress?.percent === "number" ? { width: `${modelImportProgress.percent}%` } : undefined} />
-                  </div>
-                </div>}
                 <input ref={modelFolderRef} hidden type="file" multiple {...{ webkitdirectory: "", directory: "" }} onChange={(event) => { const input = event.currentTarget; const files = Array.from(input.files ?? []); void importModels(files).finally(() => { input.value = ""; }); }} />
                 <p className="floating-note">{cloudLibrary ? "New imports are saved privately to cloud and cached on this device." : "Models are saved on this device while cloud sync is unavailable."} Include the .model3.json, .moc3, textures and animation files. Up to 512 MiB per package.</p>
                 {cloudLibrary && <p className="floating-note">Models + scenes: {((cloudLibrary.usage.live2d.used + cloudLibrary.usage.other.used) / 1e9).toFixed(2)} / 8 GB shared. 2 GB stays unused as a safety buffer. Pending uploads count toward the budget.</p>}
@@ -2634,7 +2636,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
             </>}
              {panel === "status" && <StorageStatusPanel/>}
               {panel === "settings" && <><div className="custom-instructions"><strong>Reset Vivian</strong><p>ล้างความจำ แชต Mood และความสัมพันธ์บนคลาวด์ที่ใช้ร่วมกัน รวมถึงประวัติแชตและคำแนะนำส่วนตัวที่ซิงก์ทุกเครื่อง</p>{resetConfirming ? <div role="alertdialog" aria-label="ยืนยันรีเซ็ต Vivian"><p>ข้อมูลนี้จะถูกลบถาวรจากคลาวด์ที่ใช้ร่วมกันและแชตบนอุปกรณ์นี้ โมเดล การตั้งค่าเสียง และบัญชีล็อกอินจะยังอยู่</p><button type="button" className="floating-option" disabled={sending || resetting || savingCustomInstructions} onClick={() => { void resetVivian(); }}>ยืนยันรีเซ็ต Vivian</button><button type="button" className="floating-option" onClick={() => setResetConfirming(false)}>ยกเลิก</button></div> : <button type="button" className="floating-option" disabled={sending || resetting || savingCustomInstructions} onClick={() => setResetConfirming(true)}>{resetting ? "กำลังรีเซ็ต…" : "Reset memories and companion"}</button>}{resetNotice && <p role="status">{resetNotice}</p>}</div><div className="custom-instructions"><strong>Custom instructions</strong><p>How should Vivian speak with you? Saved to your account and synced across devices.</p><textarea value={customInstructions} maxLength={2000} onChange={(event) => updateCustomInstructions(event.target.value)} placeholder="Call me… Speak in Thai…"/><div className="custom-instructions-actions"><button type="button" className="floating-option" disabled={savingCustomInstructions} onClick={() => { void saveCustomInstructions(); }}>{savingCustomInstructions ? "Saving…" : "Save"}</button><span role="status">{customInstructionsNotice || (!customInstructionsSynced ? "กำลังซิงก์…" : customInstructionsDirty ? "ยังไม่ได้บันทึก" : "ซิงก์ทุกเครื่องแล้ว")}</span></div></div><button type="button" className="floating-option" onClick={() => setLanguageOpen(true)}><Icon name="language" size={18}/> Language <strong>{speechLanguage.toUpperCase()}</strong></button><button type="button" onClick={() => setInfoOpen(true)} className="floating-option"><Icon name="info" size={18}/> About Vivian</button></>}
-            {panel === "settings" && <form action="/auth/signout" method="post" className="account-settings"><div><small>ลงชื่อเข้าใช้ด้วย</small><p>{accountEmail}</p></div><button type="submit">ออกจากระบบ <span aria-hidden="true">↗</span></button></form>}
+            {panel === "settings" && <div className="account-settings"><div><small>ลงชื่อเข้าใช้ด้วย</small><p>{accountEmail}</p></div><button type="button" onClick={async () => { const token = window.localStorage.getItem("vivian_auth_token"); window.localStorage.removeItem("vivian_auth_token"); if (token) { try { await fetch("https://vivianauth.celestiasora.workers.dev/api/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } }); } catch { /* best effort */ } } window.location.assign("/login"); }}>ออกจากระบบ <span aria-hidden="true">↗</span></button></div>}
           </div>
         </section>
       </div>
