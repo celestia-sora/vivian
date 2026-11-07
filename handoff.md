@@ -552,3 +552,18 @@ Follow up only where needed: verify live Google provider configuration and produ
 - Verification: `npm run test:custom-instructions` (4/4), `npm run test:reset` (4/4), `npx tsc --noEmit`, `npx eslint` on the new/changed library and route files, `npm run build` (route appears as `/api/custom-instructions`), and `git diff --check`. `npm run test:persona` still fails on the pre-existing persona wording mismatch (`shy, polite, slightly awkward tsundere manner`); it is unrelated to this change. Full `npm run lint` still reports the repository's pre-existing component/effect errors.
 - Commit `d2db08f` (`feat: sync custom instructions across devices with explicit save`) was pushed to `origin/main` and deployed to Production. Vercel deployment `dpl_H79AQCWMqxkNY6MfhKm23n5QM1we` reached `READY`; production alias `https://vivianlabs.vercel.app`. The alias redirects unauthenticated visitors to login, and `/api/custom-instructions` returns `401` without a session, confirming the protected route is live.
 - Follow-up wording commit `26e79d8` (`fix: simplify settings save status wording`) was pushed and deployed as `dpl_6xMbf9ANAv4Z7S4noUTjrNcuNZN6` (`READY`, same production alias).
+
+# Animated model import progress - 2026-11-07
+
+- Model imports now show an animated loading bar instead of only the static "Importing model…" line. A slim 3px progress line also appears under the Character panel title while an import is running.
+- `lib/model-zip.ts` reports compressed-byte progress through an optional `onProgress` callback; `lib/local-models.ts` forwards it from the new optional second argument of `importModelFiles`.
+- `app/companion.tsx` tracks a staged `modelImportProgress` state: preparing, extracting (determinate from the ZIP ratio), inspecting an unpacked folder (indeterminate), caching in IndexedDB (indeterminate), and cloud archive/upload (determinate percentage from existing `uploadCloudModel` messages). The bar is indeterminate with a sliding fill before a percentage is known, then fills with a sheen highlight. `prefers-reduced-motion` swaps the motion for a gentle opacity pulse.
+- `syncModelToCloud` now sends upload progress to the bar instead of the pink notice; success and error notices keep their existing behaviour. The same bar is used by "Save this model to cloud".
+- Verification: `npx tsc --noEmit`, `npm run build`, `git diff --check`, and `npm run test:models` (60 passing; 13 failures are the pre-existing `model-startup`/`model-preload` assertions, reproduced on an unmodified stash). `npm run lint` still reports the repository's pre-existing React ref and explicit-any errors; the new code adds none.
+
+# Draggable Live2D model - 2026-11-07
+
+- The model on the companion stage can now be dragged to move it, pinched to zoom (or mouse-wheel to zoom), and reset with double-click / double-tap or the new Reset position & zoom button in Character → Models.
+- `lib/model-position.ts` holds the transform (`{x, y, scale}`), clamps offsets to ±75% of the stage and scale to 0.35–2.5×, and persists per model in `localStorage`. `app/companion.tsx` restores the saved transform before the first frame and re-applies it on resize/orientation.
+- Canvas pointer gestures use capture and coexist with the existing wind effect; wheel saves are debounced and drag saves on release. `prefers-reduced-motion` and storage failures do not block text chat.
+- Verification: `npx tsc --noEmit`, `git diff --check`, `node --experimental-strip-types --test tests/model-position.test.mjs` (5/5), plus `npm run test:models` pre-existing failures reproduced on an unmodified stash.

@@ -79,7 +79,8 @@ button { cursor: pointer; }
 .companion-stage.witch-bg { background: radial-gradient(ellipse 62% 58% at 50% 34%, #efe9ff 0%, #ddd1ff 37%, #c4b5fd 72%, #b7a3f0 100%); }
 .scene-background { position: absolute; z-index: 0; inset: 0; background-position: center; background-size: cover; background-repeat: no-repeat; animation: scene-fade-in .42s ease both; will-change: opacity; }
 @keyframes scene-fade-in { from { opacity: 0; transform: scale(1.015); } to { opacity: 1; transform: scale(1); } }
-.live2d-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+.live2d-canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.live2d-canvas:active { cursor: grabbing; }
 .companion-brand { position: absolute; z-index: 3; top: max(22px, env(safe-area-inset-top)); left: clamp(24px, 4vw, 58px); display: flex; align-items: center; gap: 10px; color: #241329; font-family: Arial, sans-serif; font-size: clamp(27px, 3.1vw, 40px); letter-spacing: -.07em; font-weight: 500; }
 .brand-mark { display: block; width: 38px; height: 38px; border: 3px solid currentColor; border-right-color: transparent; border-radius: 87% 12% 87% 12%; transform: rotate(-37deg) skew(-10deg); }
 .speech-stack { position: absolute; z-index: 4; left: 50%; bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(78vw, 660px); pointer-events: none; }
@@ -324,6 +325,27 @@ button { cursor: pointer; }
 .expression-grid button[aria-pressed="true"] { background: #e0d6ff; border-color: #b98ad6; color: #241329; }
 .model-notice { margin-top: 12px; padding: 10px 12px; border: 1px solid rgb(209 132 160 / .55); border-radius: 12px; color: #7c2e4a; background: rgb(255 235 242 / .85); font: 12px/1.5 system-ui, sans-serif; }
 .model-import-actions button:disabled, .model-select-label select:disabled, .expression-grid button:disabled, .floating-option:disabled { opacity: .5; cursor: wait; }
+/* Model import progress: indeterminate while files are read/inspected, then a
+ * determinate fill for ZIP extraction and cloud upload parts. */
+.model-import-progress { display: grid; gap: 8px; margin-top: 10px; padding: 11px 12px 12px; border: 1px solid #2413291f; border-radius: 12px; background: rgb(255 255 255 / .45); color: #5f5470; font: 12px/1.45 system-ui, sans-serif; }
+.model-import-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.model-import-progress-head strong { min-width: 0; overflow-wrap: anywhere; color: #241329; font-weight: 500; }
+.model-import-progress-head span { flex: 0 0 auto; color: #7c6aa8; font-variant-numeric: tabular-nums; }
+.model-import-track { position: relative; height: 8px; overflow: hidden; border-radius: 999px; background: rgb(36 19 41 / .1); }
+.model-import-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width .32s ease; }
+.model-import-track.is-determinate::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 25%, rgb(255 255 255 / .55) 50%, transparent 75%); animation: model-import-sheen 1.4s ease-in-out infinite; }
+.model-import-track.is-indeterminate .model-import-fill { width: 40%; animation: model-import-slide 1.25s cubic-bezier(.4, 0, .2, 1) infinite; }
+.floating-panel-loadbar { flex: 0 0 auto; height: 3px; margin: 6px 17px 0; overflow: hidden; border-radius: 999px; background: rgb(36 19 41 / .08); }
+.floating-panel-loadbar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b69ae9, #e0a9d4); transition: width .32s ease; }
+.floating-panel-loadbar.is-indeterminate span { width: 40%; animation: model-import-slide 1.25s cubic-bezier(.4, 0, .2, 1) infinite; }
+@keyframes model-import-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes model-import-slide { from { transform: translateX(-110%); } to { transform: translateX(360%); } }
+@keyframes model-import-breathe { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .model-import-fill, .floating-panel-loadbar span { transition: none; }
+  .model-import-track.is-determinate::after { opacity: .35; animation: none; }
+  .model-import-track.is-indeterminate .model-import-fill, .floating-panel-loadbar.is-indeterminate span { width: 100%; animation: model-import-breathe 1.6s ease-in-out infinite; }
+}
 
 /* Scene library reuses the existing floating workspace and control palette. */
 .scene-background.scene-layer { animation: none; }

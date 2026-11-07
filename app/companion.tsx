@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { captureModelRestState, restoreModelRestState, type ModelRestState, type CubismRestModel } from "@/lib/model-rest-state";
 import { attachModelWind, type WindInternalModel } from "@/lib/model-wind";
+import { clampModelTransform, clearModelTransform, loadModelTransform, saveModelTransform, type ModelTransform } from "@/lib/model-position";
 import { preloadLive2DModules, waitForCubismCore } from "@/lib/model-runtime";
 import { loadModelPreviews, removeModelPreview, saveModelPreview } from "@/lib/model-preview-cache";
 import { faceCrop, SNAPSHOT_PREVIEW_PATH, snapshotToBlob } from "@/lib/model-snapshot";
@@ -163,6 +164,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const startupTimingRef = useRef<LocalTiming | undefined>(undefined);
   const modelRestStateRef = useRef<ModelRestState | null>(null);
   const modelLoadIdRef = useRef(0);
+  const modelTransformRef = useRef<ModelTransform>({ x: 0, y: 0, scale: 1 });
+  const modelBaseScaleRef = useRef(1);
   const startupModelResolvedRef = useRef(false);
   const expressionActionRef = useRef(0);
   const motionActionRef = useRef(0);
@@ -250,6 +253,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const [modelsReady, setModelsReady] = useState(false);
   const [modelSelectionResolved, setModelSelectionResolved] = useState(false);
   const [modelImporting, setModelImporting] = useState(false);
+  const [modelImportProgress, setModelImportProgress] = useState<{ label: string; percent: number | null } | null>(null);
   const [modelUploadKey, setModelUploadKey] = useState(0);
   const [modelStatus, setModelStatus] = useState<"empty" | "loading" | "ready" | "error">("empty");
   const [startupModelPending, setStartupModelPending] = useState(false);
@@ -556,6 +560,31 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     modelPreviewUrlsRef.current.clear();
   }, []);
 
+  function applyModelTransform() {
+    const model = modelRef.current;
+    const canvas = canvasRef.current;
+    if (!model || !canvas) return;
+    const stage = canvas.parentElement?.getBoundingClientRect();
+    if (!stage || !stage.width || !stage.height) return;
+    modelTransformRef.current = clampModelTransform(modelTransformRef.current, stage.width, stage.height);
+    const base = modelBaseScaleRef.current || 1;
+    model.scale.set(base * modelTransformRef.current.scale);
+    model.x = stage.width / 2 + modelTransformRef.current.x;
+    model.y = stage.height * 0.99 + modelTransformRef.current.y;
+  }
+
+  function persistModelTransform() {
+    const activeId = activeModelIdRef.current;
+    if (!activeId) return;
+    saveModelTransform(activeId, { ...modelTransformRef.current });
+  }
+
+  function resetModelTransform() {
+    modelTransformRef.current = { x: 0, y: 0, scale: 1 };
+    applyModelTransform();
+    persistModelTransform();
+  }
+
   function preloadPackage(pack: ModelPackage, cloud: CloudLibrary | Promise<CloudLibrary | null> | null, signal: AbortSignal) {
     return availableModelPackage(pack, cloud, signal).then((loaded) => {
       signal.throwIfAborted();
@@ -569,6 +598,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     startupModelResolvedRef.current = true;
     setStartupModelPending(false);
     setModelImporting(true);
+    setModelImportProgress({ label: "Preparing model import…", percent: null });
     const wasPaused = modelPaused;
     setModelPaused(true);
     setModelNotice(null);
@@ -576,19 +606,38 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       // Let the render effect release the old model and GPU textures before
       // expanding another package. Keep rendering paused through cloud sync.
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const pack = await importModelFiles(files);
+      const importingZip = files.length === 1 && /\.zip$/i.test(files[0].name);
+      setModelImportProgress(importingZip ? { label: "Extracting model files…", percent: 0 } : { label: "Inspecting model files…", percent: null });
+      let reportedExtraction = -1;
+      const pack = await importModelFiles(files, importingZip ? (ratio) => {
+        const percent = Math.min(99, Math.round(Math.max(0, Math.min(1, ratio)) * 100));
+        if (percent <= reportedExtraction) return;
+        reportedExtraction = percent;
+        setModelImportProgress({ label: "Extracting model files…", percent });
+      } : undefined);
+      setModelImportProgress({ label: "Caching model on this device…", percent: null });
       await saveModelPackage(pack);
       setModelPackages((current) => [...current.map(modelCatalogEntry), pack]);
       setActiveModelId(pack.models[0].id);
       void navigator.storage?.persist?.().catch(() => {});
-      if (cloudLibrary) await syncModelToCloud(pack, files.length === 1 && /\.zip$/i.test(files[0].name) ? files[0] : undefined);
+      if (cloudLibrary) {
+        setModelImportProgress({ label: "Preparing private cloud copy…", percent: null });
+        await syncModelToCloud(pack, importingZip ? files[0] : undefined);
+      }
     } catch (error) {
       setModelNotice(error instanceof Error ? error.message : "Could not import this model.");
-    } finally { setModelImporting(false); setModelPaused(wasPaused); }
+    } finally {
+      setModelImporting(false);
+      setModelImportProgress(null);
+      setModelPaused(wasPaused);
+    }
   }
 
   async function syncModelToCloud(pack: ModelPackage, originalZip?: File) {
-    const saved = await uploadCloudModel(pack, setModelNotice, originalZip);
+    const saved = await uploadCloudModel(pack, (message) => {
+      const match = /(\d{1,3})%/.exec(message);
+      setModelImportProgress({ label: message.replace(/\s*\d{1,3}%\s*$/, "").trim(), percent: match ? Math.min(100, Number(match[1])) : null });
+    }, originalZip);
     // Commit the new cache before discarding the existing local-only package.
     await saveModelPackage(saved.pack).catch(() => {});
     setModelPackages((current) => current.map((entry) => entry.id === pack.id ? saved.pack : entry));
@@ -603,9 +652,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   async function saveActiveModelToCloud() {
     if (!activePackage || modelImporting || !cloudLibrary) return;
     setModelImporting(true);
+    setModelImportProgress({ label: "Preparing private cloud copy…", percent: null });
     try { await syncModelToCloud(activePackage); }
     catch (error) { setModelNotice(error instanceof Error ? error.message : "Could not save model to cloud."); }
-    finally { setModelImporting(false); }
+    finally { setModelImporting(false); setModelImportProgress(null); }
   }
 
   async function chooseModel(id: string) {
@@ -657,6 +707,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       }
       await removeModelPackage(activePackage.id);
       releaseModelPreviews(activePackage.id);
+      for (const model of activePackage.models) clearModelTransform(model.id);
       void Promise.all(activePackage.models.map((model) => removeModelPreview(model.id))).catch(() => {});
       const remaining = modelPackages.filter((pack) => pack.id !== activePackage.id);
       setModelPackages(remaining);
@@ -838,6 +889,9 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       modelRef.current = null; modelRestStateRef.current = null;
       setModelStatus("empty"); setModelSwitchPending(false); return;
     }
+    // Restore this model's saved drag position/zoom before the first frame.
+    modelTransformRef.current = loadModelTransform(activeModel.id);
+    modelBaseScaleRef.current = 1;
     setModelStatus("loading");
     setTextureSummary(null);
     const textureAbort = new AbortController();
@@ -957,14 +1011,17 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           const height = Math.max(1, Math.round(stage.height));
           app.renderer.resolution = isAppleMobile ? appleResolution : Math.min(window.devicePixelRatio || 1, 2);
           app.renderer.resize(width, height);
-          const scale = Math.min((width * (width > height ? .43 : .88)) / bounds.width, ((height - Math.min(124, height * .15)) * .88) / bounds.height);
-          model.scale.set(scale);
+          const baseScale = Math.min((width * (width > height ? .43 : .88)) / bounds.width, ((height - Math.min(124, height * .15)) * .88) / bounds.height);
+          modelBaseScaleRef.current = baseScale;
+          const transform = clampModelTransform(modelTransformRef.current, width, height);
+          modelTransformRef.current = transform;
+          model.scale.set(baseScale * transform.scale);
           // Models from different artists use different local origins. Pivot
           // from their measured bounds so none of them can land off-canvas.
           model.anchor.set(0, 0);
           model.pivot.set(bounds.x + bounds.width / 2, bounds.y + bounds.height);
-          model.x = width / 2;
-          model.y = height * .99;
+          model.x = width / 2 + transform.x;
+          model.y = height * .99 + transform.y;
         };
         app.stage.addChild(model);
         queueResize = () => {
@@ -1112,6 +1169,171 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     return () => {
       canvas.removeEventListener("webglcontextlost", lost);
       canvas.removeEventListener("webglcontextrestored", restored);
+    };
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let dragStart: { pointerId: number; x: number; y: number; offsetX: number; offsetY: number } | null = null;
+    let dragMoved = 0;
+    let pinchStart: { distance: number; midX: number; midY: number; scale: number; offsetX: number; offsetY: number } | null = null;
+    let lastTapAt = 0;
+    let dragging = false;
+    let wheelPersistTimer: number | undefined;
+
+    const setCursor = () => {
+      canvas.style.cursor = dragging ? "grabbing" : "grab";
+    };
+
+    const stageSize = () => {
+      const stage = canvas.parentElement?.getBoundingClientRect();
+      return { width: Math.max(0, stage?.width ?? 0), height: Math.max(0, stage?.height ?? 0) };
+    };
+
+    const apply = () => {
+      const model = modelRef.current;
+      if (!model) return;
+      const { width, height } = stageSize();
+      if (!width || !height) return;
+      modelTransformRef.current = clampModelTransform(modelTransformRef.current, width, height);
+      model.x = width / 2 + modelTransformRef.current.x;
+      model.y = height * 0.99 + modelTransformRef.current.y;
+      model.scale.set((modelBaseScaleRef.current || 1) * modelTransformRef.current.scale);
+    };
+
+    const persist = () => {
+      const activeId = activeModelIdRef.current;
+      if (!activeId) return;
+      saveModelTransform(activeId, { ...modelTransformRef.current });
+    };
+
+    const reset = () => {
+      modelTransformRef.current = { x: 0, y: 0, scale: 1 };
+      apply();
+      persist();
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!modelRef.current) return;
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch {
+        /* Pointer capture is best-effort. */
+      }
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pointers.size === 1) {
+        dragStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: modelTransformRef.current.x, offsetY: modelTransformRef.current.y };
+        dragMoved = 0;
+        pinchStart = null;
+        dragging = true;
+      } else if (pointers.size === 2) {
+        const [a, b] = [...pointers.values()];
+        pinchStart = {
+          distance: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+          midX: (a.x + b.x) / 2,
+          midY: (a.y + b.y) / 2,
+          scale: modelTransformRef.current.scale,
+          offsetX: modelTransformRef.current.x,
+          offsetY: modelTransformRef.current.y,
+        };
+        dragStart = null;
+        dragging = true;
+      }
+      setCursor();
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!modelRef.current || !pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (pinchStart && pointers.size >= 2) {
+        const [a, b] = [...pointers.values()].slice(0, 2);
+        const distance = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        modelTransformRef.current.scale = pinchStart.scale * (distance / pinchStart.distance);
+        modelTransformRef.current.x = pinchStart.offsetX + (midX - pinchStart.midX);
+        modelTransformRef.current.y = pinchStart.offsetY + (midY - pinchStart.midY);
+        const { width, height } = stageSize();
+        modelTransformRef.current = clampModelTransform(modelTransformRef.current, width, height);
+        apply();
+        return;
+      }
+      if (dragStart && dragStart.pointerId === event.pointerId) {
+        dragMoved = Math.max(dragMoved, Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y));
+        modelTransformRef.current.x = dragStart.offsetX + (event.clientX - dragStart.x);
+        modelTransformRef.current.y = dragStart.offsetY + (event.clientY - dragStart.y);
+        const { width, height } = stageSize();
+        modelTransformRef.current = clampModelTransform(modelTransformRef.current, width, height);
+        apply();
+      }
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const wasDrag = dragStart !== null || pinchStart !== null;
+      const hadPointers = pointers.has(event.pointerId);
+      pointers.delete(event.pointerId);
+      try {
+        canvas.releasePointerCapture?.(event.pointerId);
+      } catch {
+        /* Already released when the gesture ended. */
+      }
+      if (pointers.size === 0) {
+        if (wasDrag) persist();
+        // Double-tap reset for touch (dblclick covers mouse).
+        if (hadPointers && dragMoved < 8 && !pinchStart) {
+          const now = Date.now();
+          if (now - lastTapAt < 350) reset();
+          lastTapAt = now;
+        }
+        dragStart = null;
+        pinchStart = null;
+        dragging = false;
+      } else if (pointers.size === 1) {
+        const [id, pos] = [...pointers.entries()][0];
+        dragStart = { pointerId: id, x: pos.x, y: pos.y, offsetX: modelTransformRef.current.x, offsetY: modelTransformRef.current.y };
+        dragMoved = 0;
+        pinchStart = null;
+      }
+      setCursor();
+    };
+
+    const onDoubleClick = (event: MouseEvent) => {
+      event.preventDefault();
+      reset();
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (!modelRef.current) return;
+      event.preventDefault();
+      const zoom = Math.exp(-event.deltaY * 0.0012 * (event.ctrlKey || event.metaKey ? 1.6 : 1));
+      modelTransformRef.current.scale *= zoom;
+      const { width, height } = stageSize();
+      modelTransformRef.current = clampModelTransform(modelTransformRef.current, width, height);
+      apply();
+      // Wheel fires many times per gesture; debounce the write.
+      if (wheelPersistTimer !== undefined) window.clearTimeout(wheelPersistTimer);
+      wheelPersistTimer = window.setTimeout(persist, 200);
+    };
+
+    canvas.style.cursor = "grab";
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("dblclick", onDoubleClick);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
+      canvas.removeEventListener("dblclick", onDoubleClick);
+      canvas.removeEventListener("wheel", onWheel);
+      canvas.style.cursor = "";
+      pointers.clear();
+      if (wheelPersistTimer !== undefined) window.clearTimeout(wheelPersistTimer);
     };
   }, []);
 
@@ -2279,6 +2501,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       <div className="floating-workspace menu-window">
         <section className="floating-panel" role="dialog" aria-modal="true" aria-label={panel ? navigation.find((item) => item.key === panel)?.label : "Vivian menu"}>
           <div className="floating-panel-head">{panel && <button className="settings-back" type="button" onClick={backToNavigation} aria-label="Back to menu"><svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>}<div><small>{panel ? `VIVIAN / ${panel.toUpperCase()}` : "VIVIAN / MENU"}</small><h2>{panel ? navigation.find((item) => item.key === panel)?.label : "Menu"}</h2></div><button type="button" onClick={closeNavigation} aria-label="Close menu"><Icon name="close" size={18}/></button></div>
+          {modelImporting && panel === "character" && <div className={`floating-panel-loadbar${typeof modelImportProgress?.percent === "number" ? " is-determinate" : " is-indeterminate"}`} aria-hidden="true"><span style={typeof modelImportProgress?.percent === "number" ? { width: `${modelImportProgress.percent}%` } : undefined} /></div>}
           <div className="floating-panel-body">
             {!panel && <>
               <button type="button" className="floating-new-chat" onClick={newConversation}><Icon name="plus" size={17}/> New Chat</button>
@@ -2317,6 +2540,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                 {activeModel && <p className="floating-note model-carousel-status" role="status"><span className={`load-dot ${live2dBusy ? "is-loading" : modelStatus === "ready" ? "is-ready" : "is-error"}`} aria-hidden="true" />{live2dBusy ? "Loading Live2D model…" : modelStatus === "ready" ? `Live2D Loaded — ${activeModel.expressions.length} expressions · ${activeModel.motions.length} motions` : "Model not loaded"}</p>}
                 {activeModel && <label className="model-select-label">Texture quality<select value={textureQuality} onChange={(event) => { setModelNotice(null); setTextureQuality(event.target.value as "auto" | "original"); }}><option value="auto">Auto · fit this device</option><option value="original">Original textures</option></select></label>}
                 {activeModel && <button type="button" className="floating-option" disabled={modelStatus === "loading" || graphicsLost || modelImporting} onClick={() => { void (async () => { setModelNotice(null); if (modelPaused) { setTextureQuality("auto"); await chooseModel(activeModel.id); } setModelPaused(false); setModelReload((value) => value + 1); })(); }}>Reload model</button>}
+                {activeModel && <button type="button" className="floating-option" disabled={modelStatus !== "ready"} onClick={resetModelTransform}>Reset position & zoom</button>}
+                {activeModel && <p className="floating-note">Drag the model to move it · pinch or scroll to zoom · double-click / double-tap to reset.</p>}
                 {textureSummary && <p className="floating-note">{textureSummary}. Original files stay unchanged.</p>}
                 <AnimatedFileUpload
                   key={`model-upload-${modelUploadKey}`}
@@ -2334,7 +2559,23 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
                 <div className="model-import-actions">
                   <button className="floating-option" type="button" disabled={modelImporting || !modelsReady} onClick={() => modelFolderRef.current?.click()}>Choose an unpacked folder instead</button>
                 </div>
-                {modelImporting && <p role="status" className="floating-note">Importing model…</p>}
+                {modelImporting && <div className="model-import-progress">
+                  <div className="model-import-progress-head">
+                    <strong aria-live="polite">{modelImportProgress?.label ?? "Importing model…"}</strong>
+                    {typeof modelImportProgress?.percent === "number" && <span>{modelImportProgress.percent}%</span>}
+                  </div>
+                  <div
+                    className={`model-import-track${typeof modelImportProgress?.percent === "number" ? " is-determinate" : " is-indeterminate"}`}
+                    role="progressbar"
+                    aria-label={modelImportProgress?.label ?? "Importing model"}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={typeof modelImportProgress?.percent === "number" ? modelImportProgress.percent : undefined}
+                    aria-valuetext={typeof modelImportProgress?.percent === "number" ? `${modelImportProgress.percent}%` : undefined}
+                  >
+                    <span className="model-import-fill" style={typeof modelImportProgress?.percent === "number" ? { width: `${modelImportProgress.percent}%` } : undefined} />
+                  </div>
+                </div>}
                 <input ref={modelFolderRef} hidden type="file" multiple {...{ webkitdirectory: "", directory: "" }} onChange={(event) => { const input = event.currentTarget; const files = Array.from(input.files ?? []); void importModels(files).finally(() => { input.value = ""; }); }} />
                 <p className="floating-note">{cloudLibrary ? "New imports are saved privately to cloud and cached on this device." : "Models are saved on this device while cloud sync is unavailable."} Include the .model3.json, .moc3, textures and animation files. Up to 512 MiB per package.</p>
                 {cloudLibrary && <p className="floating-note">Models + scenes: {((cloudLibrary.usage.live2d.used + cloudLibrary.usage.other.used) / 1e9).toFixed(2)} / 8 GB shared. 2 GB stays unused as a safety buffer. Pending uploads count toward the budget.</p>}

@@ -4,12 +4,14 @@ import { readZipDirectory, updateZipCrc } from "./zip-paths.ts";
 
 /** Stream each exact compressed range from the central directory. Never scan
  * compressed bytes for ZIP signatures: those bytes can occur in valid assets. */
-export async function extractModelZip(blob: Blob, maxBytes: number, maxFiles: number) {
+export async function extractModelZip(blob: Blob, maxBytes: number, maxFiles: number, onProgress?: (ratio: number) => void) {
   const directory = await readZipDirectory(blob);
   const entries = directory.entries.filter((entry) => !entry.name.endsWith("/") && !entry.name.startsWith("__MACOSX/"));
   if (entries.length > maxFiles || entries.reduce((size, entry) => size + entry.originalSize, 0) > maxBytes) throw new Error("Expanded ZIP exceeds 512 MB or 3,000 files.");
   const assets: Array<{ path: string; blob: Blob }> = [];
   const read = bufferedBlobReader(blob);
+  const totalCompressed = entries.reduce((size, entry) => size + entry.size, 0);
+  let processed = 0;
   let expanded = 0;
   for (const entry of entries) {
     if (entry.flags & 1) throw new Error("Encrypted model ZIPs are unsupported. Choose an unencrypted ZIP or folder.");
@@ -38,7 +40,8 @@ export async function extractModelZip(blob: Blob, maxBytes: number, maxFiles: nu
         if (data.length !== length) throw new Error("Compressed data is incomplete.");
         const final = offset + length === entry.size;
         if (inflater) inflater.push(data, final); else accept(data, final);
-        if (Date.now() - lastYield > 16) { await new Promise<void>((resolve) => setTimeout(resolve, 0)); lastYield = Date.now(); }
+        processed += length;
+        if (Date.now() - lastYield > 16) { onProgress?.(totalCompressed ? processed / totalCompressed : 1); await new Promise<void>((resolve) => setTimeout(resolve, 0)); lastYield = Date.now(); }
       }
       if (!entry.size) { if (inflater) inflater.push(new Uint8Array(), true); else accept(new Uint8Array(), true); }
       if (!finished || size !== entry.originalSize || ((crc ^ -1) >>> 0) !== entry.crc) throw new Error("ZIP entry size or checksum does not match.");
@@ -47,5 +50,6 @@ export async function extractModelZip(blob: Blob, maxBytes: number, maxFiles: nu
     }
     assets.push({ path: entry.name, blob: writer.finish() });
   }
+  onProgress?.(1);
   return { assets, paths: directory.paths };
 }

@@ -161,13 +161,13 @@ function mime(path: string): string {
   if (/\.ogg$/i.test(path)) return "audio/ogg";
   return /\.png$/i.test(path) ? "image/png" : /\.jpe?g$/i.test(path) ? "image/jpeg" : /\.webp$/i.test(path) ? "image/webp" : /\.gif$/i.test(path) ? "image/gif" : /\.json$/i.test(path) ? "application/json" : "application/octet-stream";
 }
-export async function importModelFiles(files: File[]): Promise<ModelPackage> {
+export async function importModelFiles(files: File[], onProgress?: (ratio: number) => void): Promise<ModelPackage> {
   if (!files.length) throw new Error("Select a model ZIP or folder.");
   let assets: ModelAsset[];
   if (files.length === 1 && /\.zip$/i.test(files[0].name)) {
     if (files[0].size > MAX_BYTES) throw new Error("ZIP exceeds 512 MB.");
     const { extractModelZip } = await import("./model-zip.ts");
-    const extracted = await extractModelZip(files[0], MAX_BYTES, MAX_FILES);
+    const extracted = await extractModelZip(files[0], MAX_BYTES, MAX_FILES, onProgress);
     assets = extracted.assets.map((asset) => ({ path: asset.path, blob: new Blob([asset.blob], { type: mime(asset.path) }) }));
     let pathError: unknown;
     for (const paths of extracted.paths) {
