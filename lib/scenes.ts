@@ -41,3 +41,38 @@ export function sceneImageExtension(mime: string): string {
   if (!extension) throw new SceneError("Unsupported scene image type.");
   return extension;
 }
+
+// Deterministic label match: the user's own label IS the scene meaning, so an
+// exact mention ("คฤหาสน์") is a stronger signal than a probabilistic guess.
+// Longest label wins so "บ้านของ Vivian" beats a short "บ้าน" inside it.
+// Single-character labels are ignored to avoid substring noise in Thai.
+export function findSceneLabelMatch(
+  texts: string[],
+  scenes: ReadonlyArray<{ id: string; label: string }>,
+  activeSceneId: string | null = null,
+): string | null {
+  let best: { id: string; length: number } | null = null;
+  for (const scene of scenes) {
+    if (scene.id === activeSceneId) continue;
+    const label = scene.label.trim().normalize("NFC");
+    const length = [...label].length;
+    if (length < 2) continue;
+    const needle = label.toLowerCase();
+    for (const raw of texts) {
+      if (!raw) continue;
+      if (raw.normalize("NFC").toLowerCase().includes(needle)) {
+        if (!best || length > best.length) best = { id: scene.id, length };
+        break;
+      }
+    }
+  }
+  return best?.id ?? null;
+}
+
+export function sceneLabelForId(
+  scenes: ReadonlyArray<{ id: string; label: string }>,
+  id: string | null | undefined,
+): string | null {
+  if (!id) return null;
+  return scenes.find((scene) => scene.id === id)?.label ?? null;
+}

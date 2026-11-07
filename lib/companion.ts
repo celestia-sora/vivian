@@ -39,9 +39,14 @@ function count(text: string, pattern: RegExp) { return pattern.test(text) ? 1 : 
 export function applyConversationTurn(state: CompanionState, userText: string, reply: string, idle = false): CompanionState {
   const combined = `${userText} ${reply}`;
   const positive = count(userText, /ขอบคุณ|ดีใจ|รัก|ชอบ|น่ารัก|เยี่ยม|เก่ง|อบอุ่น|thank|love|cute|great|miss you/i);
-  const negative = count(userText, /โง่|ห่วย|น่าเบื่อ|เงียบไป|โกรธ|โมโห|ไปเลย|stupid|hate|shut up|annoying/i);
+  const negative = count(userText, /โง่|ห่วย|น่าเบื่อ|เงียบไป|โกรธ|โมโห|งอน|หงุดหงิด|รำคาญ|ไปเลย|stupid|hate|shut up|annoying/i);
   const personal = count(userText, /ฉันชื่อ|ชื่อของฉัน|ฉันชอบ|ฉันไม่ชอบ|จำไว้|จำว่า|เรียกฉัน|my name|call me|remember|I live|I work/i);
-  const sad = count(combined, /เศร้า|เหงา|เหนื่อย|ร้องไห้|เสียใจ|tired|lonely|sad/i);
+  // Keep tired/anxious distinct from sad: เหนื่อย used to force melancholy
+  // and the tired mood (and its tea-rest face) almost never appeared. Check
+  // tired before sad so "เหนื่อย" wins, while "เศร้า|เหงา" stays melancholy.
+  const tired = count(combined, /ง่วง|เพลีย|อยากนอน|เหนื่อย|อ่อนล้า|tired|sleepy|exhausted/i);
+  const anxious = count(userText, /กลัว|กังวล|วิตก|กังวลใจ|ไม่ไหว|afraid|anxious|worried|scared/i);
+  const sad = count(combined, /เศร้า|เหงา|ร้องไห้|เสียใจ|หดหู่|lonely|sad|cry/i);
   const playful = count(combined, /ขำ|ตลก|แกล้ง|มุก|เล่น|haha|lol|fun/i);
   const flustered = count(combined, /เขิน|หน้าแดง|ไม่ได้ห่วง|ไม่ได้รอ|หยอด|ชม|หึง|หวง|fluster|blush|tsundere|jealous|flirt|crush/i);
   let affinity = state.affinity + (idle ? 0 : 1) + positive * 3 - negative * 4;
@@ -50,6 +55,8 @@ export function applyConversationTurn(state: CompanionState, userText: string, r
   let mood: Mood = state.mood;
   let moodIntensity = state.moodIntensity;
   if (negative) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 12); }
+  else if (anxious) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 10); }
+  else if (tired) { mood = "tired"; moodIntensity = Math.min(100, moodIntensity + 8); }
   else if (sad) { mood = "melancholy"; moodIntensity = Math.min(100, moodIntensity + 8); }
   else if (flustered) { mood = "yandere"; moodIntensity = Math.min(100, moodIntensity + 12); }
   else if (playful && affinity >= 35) { mood = "playful"; moodIntensity = Math.min(100, moodIntensity + 7); }

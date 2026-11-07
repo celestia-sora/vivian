@@ -27,7 +27,8 @@ function load(path, imports = {}, globals = {}) {
 }
 const tools = load("../lib/tools.ts");
 const jev = load("../lib/jev.ts");
-const harness = load("../lib/chat-decision.ts", { "@/lib/tools": tools, "@/lib/jev": jev });
+const scenes = load("../lib/scenes.ts");
+const harness = load("../lib/chat-decision.ts", { "@/lib/tools": tools, "@/lib/jev": jev, "@/lib/scenes": scenes });
 const companion = load("../lib/companion.ts");
 const story = load("../lib/vivian-story.ts");
 const dialogue = load("../lib/vivian-dialogue.ts");
@@ -232,7 +233,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, gem
     calls.push({ kind: "jev", body: JSON.parse(options.body) });
     return jevFetch ? jevFetch(url, options) : Response.json(answers(values));
   }, providerEnv, timeout).module;
-  const fixturePlan = load("../lib/chat-decision.ts", { "@/lib/tools": tools, "@/lib/jev": fixtureJev });
+  const fixturePlan = load("../lib/chat-decision.ts", { "@/lib/tools": tools, "@/lib/jev": fixtureJev, "@/lib/scenes": scenes });
   const fixtureTools = load("../lib/tools.ts", {}, { process: { env: {} }, fetch: async () => assert.fail("Unexpected live local tool request") });
   const imports = {
     "@/lib/scene-store": {
@@ -256,6 +257,7 @@ function chatFixture({ values, jevFetch, env = {}, denied = null, groqReply, gem
     } },
     "@/lib/tools": fixtureTools,
     "@/lib/jev": fixtureJev,
+    "@/lib/scenes": scenes,
     "@/lib/chat-decision": fixturePlan,
     "@/lib/chat-stream": load("../lib/chat-stream.ts", {}, { Response, ReadableStream, TextEncoder, TextDecoder }),
     "@/lib/chat-history": load("../lib/chat-history.ts", {}, { crypto: require("node:crypto").webcrypto }),
@@ -528,6 +530,50 @@ test("scene context or execution/storage failure cannot prevent normal chat from
     assert.equal(body.text, "Vivian fixture reply");
     assert.equal(body.scene.change, false);
   }
+});
+const mansionCatalog = [{ id: "00000000-0000-4000-8000-000000000010", label: "คฤหาสน์" }, { id: "00000000-0000-4000-8000-000000000011", label: "คาเฟ่" }];
+const mansionContext = { userId: "fixture-user", autoScene: true, activeSceneId: null, revision: "fixture-revision", scenes: mansionCatalog };
+test("scene bar is presentation-low: 0.65 passes, below fails, and the question quotes the label", async () => {
+  assert.equal(jev.parseJevDecision(sceneAnswers([0.7, 0.1]), mansionCatalog).scene.id, mansionCatalog[0].id);
+  assert.equal(jev.parseJevDecision(sceneAnswers([0.64, 0.1]), mansionCatalog).scene.change, false);
+  assert.equal(jev.parseJevDecision(sceneAnswers([0.9, 0.87]), mansionCatalog).scene.change, false);
+  assert.equal(jev.parseJevDecision(sceneAnswers([0.9, 0.84]), mansionCatalog).scene.id, mansionCatalog[0].id);
+  const calls = [];
+  const fixture = client(async (_url, options) => { calls.push(JSON.parse(options.body)); return Response.json(sceneAnswers([0.01, 0.01])); });
+  await fixture.module.decideVivian(context("กลับคฤหาสน์กัน", { scenes: { autoScene: true, activeSceneId: null, available: mansionCatalog } }));
+  assert.match(calls[0].questions.scene_0.instructions, /คฤหาสน์/);
+  assert.match(calls[0].questions.scene_0.instructions, /Vivian mentioning/);
+});
+test("explicit scene name switches even when JEV under-scores or is disabled", async () => {
+  assert.equal(scenes.findSceneLabelMatch(["พรุ่งนี้กลับคฤหาสน์กัน"], mansionCatalog, null), mansionCatalog[0].id);
+  assert.equal(scenes.findSceneLabelMatch(["อยู่ที่คาเฟ่ตอนนี้"], mansionCatalog, null), mansionCatalog[1].id);
+  assert.equal(scenes.findSceneLabelMatch(["กลับคฤหาสน์กัน"], mansionCatalog, mansionCatalog[0].id), null);
+  assert.equal(scenes.findSceneLabelMatch(["คาเฟ่คฤหาสน์"], [{ id: "a", label: "คาเฟ่" }, { id: "b", label: "คาเฟ่คฤหาสน์" }], null), "b");
+  assert.equal(scenes.findSceneLabelMatch(["คุยเรื่องอื่น"], mansionCatalog, null), null);
+  assert.equal(scenes.sceneLabelForId(mansionCatalog, mansionCatalog[0].id), "คฤหาสน์");
+  assert.equal(scenes.sceneLabelForId(mansionCatalog, null), null);
+  const disabled = chatFixture({ env: { JEV_ENABLED: "false" }, sceneContext: mansionContext });
+  const disabledBody = await (await disabled.post("วันนี้เรากลับคฤหาสน์กัน")).json();
+  assert.equal(disabledBody.scene.id, mansionCatalog[0].id);
+  assert.equal(disabled.calls.filter((call) => call.kind === "jev").length, 0);
+  const low = chatFixture({ sceneContext: mansionContext, jevFetch: async () => Response.json(sceneAnswers([0.01, 0.01])) });
+  const lowBody = await (await low.post("ไปคาเฟ่กันเถอะ")).json();
+  assert.equal(lowBody.scene.id, mansionCatalog[1].id);
+});
+test("Vivian naming the scene in her reply switches it the same turn, and she is told where she is", async () => {
+  const reply = chatFixture({
+    sceneContext: mansionContext,
+    jevFetch: async () => Response.json(sceneAnswers([0.01, 0.01])),
+    groqReply: () => Response.json({ choices: [{ message: { content: "งั้นกลับคฤหาสน์กันเถอะ" } }] }),
+  });
+  const replyBody = await (await reply.post("วันนี้ไปไหนดี")).json();
+  assert.equal(replyBody.scene.id, mansionCatalog[0].id);
+  assert.match(replyBody.text, /คฤหาสน์/);
+  const home = chatFixture({ sceneContext: { ...mansionContext, activeSceneId: mansionCatalog[0].id } });
+  await home.post("สวัสดี");
+  const prompt = home.calls.find((call) => call.kind === "groq").body.messages[0].content;
+  assert.match(prompt, /คฤหาสน์/);
+  assert.match(prompt, /ฉากปัจจุบัน/);
 });
 
 

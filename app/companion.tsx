@@ -18,6 +18,7 @@ import { useConversationHistory } from "@/lib/use-conversation-history";
 import { historyMessage, HISTORY_CACHE_KEY, type HistoryMessage, type HistoryConversation } from "@/lib/chat-history";
 import { authFetch } from "@/lib/auth/fetch";
 import { decayCompanionState, type CompanionState, defaultCompanionState, normalizeMood, moodLabel, type Mood } from "@/lib/companion";
+import { detectLive2DEmotion, resolveLive2DExpression, resolveLive2DMotion } from "@/lib/live2d-emotion";
 import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
 import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, readModelSelection, resolveStartupModel, writeModelSelection, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
 import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, saveCloudModelPreference, type CloudLibrary } from "@/lib/cloud-models";
@@ -1736,33 +1737,10 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       sendingRef.current = false;
     }
   }
-  function moodExpression(mood: Mood, intensity: number) {
-    const map: Record<Mood, string> = { calm: "#", warm: intensity >= 70 ? "M lianhong" : "M miyan", playful: intensity >= 70 ? "M xingxing" : "M xingxing2", tired: "S chabei", melancholy: "M QAQ", yandere: intensity >= 70 ? "M lianhong" : "M nu" };
-    return map[mood];
-  }
-  function situationExpression(text: string, mood: Mood, intensity: number, idle: boolean) {
-    // Miss has 15 authored expressions. Match them to the conversation
-    // context deterministically so every expression has a meaningful use.
-    const rules: Array<[string, RegExp]> = [
-      ["X shetou", /จุ๊บ|จูบ|แกล้ง|หยอก|ล้อเล่น|ทะเล้น|kiss|tease|tongue/i],
-      ["S shouji", /โทรศัพท์|โทรหา|สายโทร|ข้อความ|แจ้งเตือน|notification|phone|call|message|text/i],
-      ["S chabei", /ชา|กาแฟ|ดื่ม|จิบ|พัก|เหนื่อย|ง่วง|tea|coffee|drink|rest|tired|sleepy/i],
-      ["T faxing", /ผม|ทรงผม|แต่งตัว|แต่งหน้า|สวย|ดูดี|แฟชั่น|hair|hairstyle|makeup|beautiful|pretty|style/i],
-      ["M QAQ", /เศร้า|เสียใจ|ร้องไห้|เหงา|ขอโทษ|sad|sorry|cry|lonely/i],
-      ["M nu", /โกรธ|โมโห|หงุดหงิด|รำคาญ|ไม่พอใจ|angry|mad|annoyed|upset/i],
-      ["M wenhao ", /ตกใจ|ว้าว|จริงเหรอ|หา|ไม่น่าเชื่อ|surprise|wow|really|shocked/i],
-      ["M ##", /อะไรนะ|ห๊ะ|เอ๊ะ|งง|ไม่เข้าใจ|ทำไม|what|huh|confused|don't understand|why/i],
-      ["M nu", /หวง|หึง|ของฉัน|mine|possessive|jealous|เขิน|น่ารัก|ชม|หน้าแดง|cute|blush|compliment/i],
-      ["M lianhong", /รัก|ชอบ|คิดถึง|กอด|ห่วง|love|like|miss you|hug|care/i],
-      ["M xingxing2", /ขำ|ตลก|หัวเราะ|มุก|ฮา|haha|lol|funny|joke|laugh/i],
-      ["M xingxing", /ดีใจ|ตื่นเต้น|เยี่ยม|สุดยอด|ฉลอง|ดาว|happy|excited|great|awesome|celebrate|star/i],
-      ["M ###", /ตา|มอง|กระพริบ|หลับตา|ดูนี่|eyes|look|blink|watch/i],
-      ["M miyan", /ยิ้ม|สวัสดี|ทักทาย|ขอบคุณ|สุขสันต์|happy|smile|hello|greeting|thank/i],
-    ];
-    const matched = rules.find(([, pattern]) => pattern.test(text))?.[0];
-    if (matched) return matched;
-    if (idle && mood === "tired") return "S chabei";
-    return moodExpression(mood, intensity);
+  // Thin adapter kept for the old call shape: the scoring engine lives in
+  // lib/live2d-emotion so it is testable without booting the whole client.
+  function situationEmotion(reply: string, userText: string, mood: Mood, intensity: number, idle: boolean) {
+    return detectLive2DEmotion({ reply, userText, mood, intensity, idle });
   }
   async function handleExpressionCommand(text: string) {
     const match = text.match(/^\/(?:expression|exp)(?:\s+(.+))?$/i);
@@ -1798,33 +1776,18 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   async function playReaction(reply: string, userText: string, idle = false) {
     const model = modelRef.current;
     if (!model) return;
-    const combined = `${reply} ${userText}`;
     const { mood, moodIntensity: intensity } = companionRef.current;
     const supportedExpressions = activeModel?.expressions ?? [];
-    const authoredExpression = situationExpression(combined, mood, intensity, idle);
-    const emotionNames: Record<Mood, RegExp> = {
-      calm: /neutral|normal|default|calm|平常|通常|ปกติ/i,
-      warm: /happy|smile|joy|warm|笑|开心|ยิ้ม/i,
-      playful: /happy|smile|excited|laugh|笑|开心|ดีใจ/i,
-      tired: /tired|sleep|眠|困|ง่วง/i,
-      melancholy: /sad|cry|tear|悲|哭|เศร้า/i,
-      yandere: /angry|mad|jealous|intense|pout|embarrass|fluster|shy|怒|生气|งอน|เขิน|หน้าแดง|หึง/i,
-    };
-    const expression = supportedExpressions.find((name) => name.trim() === authoredExpression.trim())
-      ?? supportedExpressions.find((name) => emotionNames[mood].test(name));
+    // Tags first, then mood, then words. A model with no matching face keeps
+    // its last reaction instead of flashing back to neutral every turn.
+    const emotion = situationEmotion(reply, userText, mood, intensity, idle);
+    const expression = resolveLive2DExpression(emotion, supportedExpressions);
     try {
       if (expression) { await model.expression(expression); setActiveExpression(expression); }
-      else resetReaction();
+      else if (!supportedExpressions.length) resetReaction();
       const definitions = model.internalModel?.motionManager?.definitions ?? {};
-      // Use authored groups when available and keep unknown models at idle.
-      const motionByExpression: Record<string, string[]> = {
-        "M love": ["Idle"], "M QAQ": ["Sad", "Idle"], "M nu": ["Angry", "Idle"],
-        "M wenhao ": ["Surprise", "Idle"], "M ##": ["Thinking", "Idle"], "M xingxing": ["Excited", "Idle"],
-        "M xingxing2": ["Laugh", "Idle"], "S chabei": ["Tea", "Idle"], "S shouji": ["Phone", "Idle"],
-        "T faxing": ["Hair", "Idle"], "X shetou": ["Tease", "Idle"], "M ###": ["Look", "Idle"],
-        "M miyan": ["Happy", "Idle"], "M lianhong": ["Warm", "Idle"], "#": ["Idle"],
-      };
-      const motionName = (motionByExpression[authoredExpression] ?? ["Idle"]).find((name) => definitions[name]?.length);
+      const groups = Object.keys(definitions).filter((name) => Array.isArray(definitions[name]) && definitions[name].length);
+      const motionName = resolveLive2DMotion(emotion, groups);
       if (motionName) await model.motion(motionName, 0, intensity >= 70 ? 3 : 2);
     } catch (error) {
       resetReaction();

@@ -10,8 +10,9 @@ import { loadCompanionState, saveCompanionState } from "@/lib/companion-store";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { runTools, toolsPromptBlock, webSearchTool, visionSearchIntent } from "@/lib/tools";
 import { rateLimit, rateLimitedResponse } from "@/lib/rate-limit";
-import { decideVivian, jevEnabled, type JevContext } from "@/lib/jev";
+import { decideVivian, type JevContext } from "@/lib/jev";
 import { loadSceneContext, executeSceneDecision } from "@/lib/scene-store";
+import { findSceneLabelMatch, sceneLabelForId, type SceneDecision } from "@/lib/scenes";
 import { resolveChatPlan } from "@/lib/chat-decision";
 import { limitReplyCharacters, replyCharacterLimit } from "@/lib/speech";
 
@@ -323,7 +324,10 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
   // Non-critical presentation lookups have their own short deadline. Start
   // companion state first, preserving the existing overlap with JEV.
   const statePromise = loadCompanionState(userKey);
-  const sceneContext = passive || !jevEnabled() ? null : await loadSceneContext(authenticatedUserId).catch(() => null);
+  // Always load the scene catalog for non-passive turns, even when JEV is
+  // disabled/unconfigured. The deterministic label match in chat-decision
+  // needs the labels to switch by name ("คฤหาสน์") without JEV.
+  const sceneContext = passive ? null : await loadSceneContext(authenticatedUserId).catch(() => null);
   const decisionContext: JevContext = {
     message: lastUserText,
     recentTurns: recent.slice(0, -1).slice(-2),
@@ -367,7 +371,15 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
   const memories = memoriesRes;
   const memoryContext = memories.length ? `\n\nความจำเกี่ยวกับผู้ใช้ที่ควรใช้เป็นบริบท:\n${memories.slice(0, 8).map((item) => `- [${item.category}] ${item.memory.slice(0, 240)}`).join("\n")}` : "";
   const toolContext = toolsPromptBlock(toolResults);
-  const systemPrompt = personalityPrompt(state, memoryContext, toolContext, state.conversationSummary, idle, character, personality, characterName, language, visionIdle) + plan.responseHint + vivianTurnPrompt(customInstructions) + languageLock(language);
+  // Give Vivian the current place by name (never the image itself) so she
+  // can talk about it naturally. When auto-scene is on, the background
+  // follows the place she and the user keep naming; without this line she
+  // had no way to know where "here" is and never mentioned it.
+  const activeSceneLabel = sceneContext ? sceneLabelForId(sceneContext.scenes, sceneContext.activeSceneId) : null;
+  const sceneContextBlock = activeSceneLabel
+    ? `\n\nฉากปัจจุบัน: ตอนนี้ Vivian กับผู้ใช้อยู่ที่ "${activeSceneLabel}" ให้ถือว่าที่นี่คือสถานที่ที่คุยกันอยู่ พูดถึงชื่อฉากนี้ได้ตามบริบท (เช่น กลับมาถึง${activeSceneLabel}แล้ว, อยู่ที่${activeSceneLabel}ต่อ) แบบเป็นธรรมชาติ ไม่ต้องรายงานระบบฉากทุกครั้ง และอย่ายัดชื่อฉากทุกประโยค; ให้พูดถึงเมื่อสถานที่มีผลต่อบทสนทนาหรือเมื่อผู้ใช้พูดถึงสถานที่นั้น`
+    : "";
+  const systemPrompt = personalityPrompt(state, memoryContext, toolContext, state.conversationSummary, idle, character, personality, characterName, language, visionIdle) + sceneContextBlock + plan.responseHint + vivianTurnPrompt(customInstructions) + languageLock(language);
   const promptContents: ProviderMessage[] = greeting
     ? [...contents.slice(-6), { role: "user", content: `[ระบบ: คำทักแรกของ session ใหม่] ข้อความก่อนหน้านี้เป็นบทสนทนาจาก session ที่แล้ว ให้ Vivian เปิดบทสนทนาใหม่สด ๆ 1-2 ประโยคด้วยน้ำเสียงเย็นชา ตรง และกระชับ อาจหยิบเรื่องค้างมาแซวหรือถามต่อได้ถ้ารู้จริง ห้ามเปิดด้วยประโยคบริการ ห้ามทวนคำตอบเดิมหรือแต่งเหตุการณ์ ไม่อ้างว่าเห็นผู้ใช้ผ่านกล้องหรือรู้เวลา/อากาศโดยไม่มีข้อมูล ห้ามพูดถึงระบบหรือ AI และห้ามใช้ emoji${modeLanguageNote(language)}` }]
     : idle
@@ -649,7 +661,15 @@ async function chatReply(request: Request, authenticatedUserId: string | null, r
       await saveCompanionState(userKey, nextState);
     } catch (error) { console.warn("Persistence unavailable", error); }
   });
-  const scene = await executeSceneDecision(sceneContext, plan.scene).catch(() => ({ change: false as const }));
+  // If Vivian's own reply names a different scene (e.g. she says
+  // "กลับคฤหาสน์กัน"), switch to that scene in the same turn instead of
+  // waiting for the user's next message. JEV ran before generation, so it
+  // could not see this mention; this scan closes that loop.
+  const replySceneId = !passive && sceneContext && !plan.scene.change
+    ? findSceneLabelMatch([text], sceneContext.scenes, sceneContext.activeSceneId)
+    : null;
+  const effectiveScene: SceneDecision = plan.scene.change ? plan.scene : (replySceneId ? { change: true, id: replySceneId } : plan.scene);
+  const scene = await executeSceneDecision(sceneContext, effectiveScene).catch(() => ({ change: false as const }));
   return NextResponse.json({
     scene,
     text,

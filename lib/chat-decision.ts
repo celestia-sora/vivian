@@ -1,5 +1,6 @@
 import { detectTools, type ToolName } from "@/lib/tools";
 import { jevConfidenceThreshold, type BooleanDecision, type JevContext, type VivianDecision } from "@/lib/jev";
+import { findSceneLabelMatch } from "@/lib/scenes";
 
 export interface ChatPlan {
   scene: import("@/lib/scenes").SceneDecision;
@@ -36,8 +37,17 @@ export function resolveChatPlan(context: JevContext, decision: VivianDecision | 
   }
   if (!passive && !context.hasImage && confidentYes(decision?.vision)) hints.push("No image was supplied. If seeing the subject is necessary, ask for an image; do not claim to see it.");
   const scene = decision?.scene;
-  const validatedScene = !passive && context.scenes?.autoScene && scene?.change === true && typeof scene.id === "string" && scene.id !== context.scenes.activeSceneId && context.scenes.available.some((item) => item.id === scene.id)
+  let validatedScene: import("@/lib/scenes").SceneDecision = !passive && context.scenes?.autoScene && scene?.change === true && typeof scene.id === "string" && scene.id !== context.scenes.activeSceneId && context.scenes.available.some((item) => item.id === scene.id)
     ? { change: true as const, id: scene.id } : { change: false as const };
+  // Deterministic fallback: an exact label mention in the user's message or
+  // in Vivian's recent replies (e.g. "คฤหาสน์") switches the background even
+  // when JEV is disabled, timed out, or under-scored the scene. JEV's
+  // proposal still wins when present; this only fills the no-change case.
+  if (!validatedScene.change && !passive && context.scenes?.autoScene) {
+    const texts = [context.message, ...context.recentTurns.map((turn) => turn.content)];
+    const matched = findSceneLabelMatch(texts, context.scenes.available, context.scenes.activeSceneId);
+    if (matched) validatedScene = { change: true as const, id: matched };
+  }
   return {
     scene: validatedScene,
     shouldSearch,

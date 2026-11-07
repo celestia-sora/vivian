@@ -166,30 +166,44 @@ export async function cleanupSceneImages(userId: string): Promise<void> {
     }
   } catch { /* Non-critical deferred work. */ }
 }
+function sceneDebug(message: string, extra?: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "development" || process.env.JEV_DEBUG === "true") console.debug("AI Auto Scene", message, extra ?? {});
+}
+
 export async function loadSceneContext(userId: string | null): Promise<SceneContext | null> {
   try {
-    if (!userId) return null;
-    const db = sceneClient(AbortSignal.timeout(600));
+    if (!userId) { sceneDebug("context skipped: no user"); return null; }
+    // 1.2s (up from 0.6s): Supabase cold/round-trip can exceed 600ms for two
+    // sequential queries, which previously made Auto Scene silently dead.
+    const db = sceneClient(AbortSignal.timeout(1200));
     const result = await db.from("vivian_scene_preferences").select("*").eq("user_id", userId).maybeSingle();
-    if (result.error || !result.data?.auto_scene) return null;
+    if (result.error) { sceneDebug("context preferences error", { code: "PREF_QUERY_FAILED" }); return null; }
+    if (!result.data?.auto_scene) { sceneDebug("context off"); return null; }
     // Select ONLY semantic data for this account. No storage reads on the JEV path.
     const library = await db.from("vivian_scenes").select("id,label").eq("user_id", userId).order("created_at").limit(SCENE_MAX_COUNT);
-    if (library.error) return null;
-    return { userId: userId, autoScene: true, activeSceneId: result.data.active_scene_id, revision: result.data.revision, scenes: (library.data ?? []).map((scene) => ({ id: scene.id, label: scene.label })) };
-  } catch { return null; }
+    if (library.error) { sceneDebug("context library error", { code: "LIBRARY_QUERY_FAILED" }); return null; }
+    const scenes = (library.data ?? []).map((scene) => ({ id: scene.id, label: scene.label }));
+    sceneDebug("context loaded", { sceneCount: scenes.length, hasActive: Boolean(result.data.active_scene_id) });
+    return { userId: userId, autoScene: true, activeSceneId: result.data.active_scene_id, revision: result.data.revision, scenes };
+  } catch (error) { sceneDebug("context exception", { code: error instanceof Error ? error.name : "UNKNOWN" }); return null; }
 }
 export async function executeSceneDecision(context: SceneContext | null, decision: SceneDecision | undefined): Promise<SceneDecision> {
   const unchanged: SceneDecision = { change: false };
   try {
-    if (!context?.autoScene || decision?.change !== true || !context.scenes.some((scene) => scene.id === decision.id) || context.activeSceneId === decision.id) return unchanged;
-    const db = sceneClient(AbortSignal.timeout(600));
+    if (!context?.autoScene) { sceneDebug("execute skip: auto off / no context"); return unchanged; }
+    if (decision?.change !== true) { sceneDebug("execute skip: no proposal"); return unchanged; }
+    if (!context.scenes.some((scene) => scene.id === decision.id)) { sceneDebug("execute skip: unknown id"); return unchanged; }
+    if (context.activeSceneId === decision.id) { sceneDebug("execute skip: same scene"); return unchanged; }
+    const db = sceneClient(AbortSignal.timeout(1200));
     const scene = await getScene(db, context.userId, decision.id);
     // Check storage availability without downloading the background during chat.
-    if (scene.storage_provider === "r2") { if (await modelObjectSize(scene.image_key) === null) return unchanged; }
-    else if ((await db.storage.from(BUCKET).info(scene.image_key)).error) return unchanged;
+    if (scene.storage_provider === "r2") { if (await modelObjectSize(scene.image_key) === null) { sceneDebug("execute skip: r2 missing"); return unchanged; } }
+    else if ((await db.storage.from(BUCKET).info(scene.image_key)).error) { sceneDebug("execute skip: storage missing"); return unchanged; }
     // Atomic preference check protects manual selections/toggle changes while
     // JEV or the main provider was running, and handles concurrent replies.
     const { data, error } = await db.from("vivian_scene_preferences").update({ active_scene_id: scene.id, preset: null, revision: randomUUID(), updated_at: new Date().toISOString() }).eq("user_id", context.userId).eq("auto_scene", true).eq("revision", context.revision).select("active_scene_id").maybeSingle();
-    return error || !data ? unchanged : { change: true, id: scene.id };
-  } catch { return unchanged; }
+    if (error || !data) { sceneDebug("execute skip: revision mismatch"); return unchanged; }
+    sceneDebug("execute switched");
+    return { change: true, id: scene.id };
+  } catch (error) { sceneDebug("execute exception", { code: error instanceof Error ? error.name : "UNKNOWN" }); return unchanged; }
 }

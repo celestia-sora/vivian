@@ -44,6 +44,13 @@ test("idle banter does not increase closeness and intense moods still decay", ()
   assert.equal(faded.affinity, state.affinity);
 });
 
+test("tired and anxious turns get their own moods instead of generic sadness", () => {
+  assert.equal(applyConversationTurn(defaultCompanionState(), "วันนี้เหนื่อยมาก", "พักก่อนสิ").mood, "tired");
+  assert.equal(applyConversationTurn(defaultCompanionState(), "วันนี้เพลีย อยากนอน", "พักบ้างสิ").mood, "tired");
+  assert.equal(applyConversationTurn(defaultCompanionState(), "ฉันกลัวมากเลย", "ฉันอยู่ตรงนี้").mood, "melancholy");
+  assert.equal(applyConversationTurn(defaultCompanionState(), "วันนี้เศร้า", "ฉันฟังอยู่").mood, "melancholy");
+});
+
 test("relationship prompt gives Vivian initiative without inventing closeness", () => {
   const early = companionPromptBlock(defaultCompanionState());
   assert.match(early, /ยังรู้จักกันไม่นาน: Vivian ยังมีความเห็นและริเริ่มได้/);
