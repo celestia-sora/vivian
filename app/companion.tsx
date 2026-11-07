@@ -19,7 +19,7 @@ import { historyMessage, HISTORY_CACHE_KEY, type HistoryMessage, type HistoryCon
 import { authFetch } from "@/lib/auth/fetch";
 import { decayCompanionState, type CompanionState, defaultCompanionState, normalizeMood, moodLabel, type Mood } from "@/lib/companion";
 import { detectLive2DEmotion, resolveLive2DExpression, resolveLive2DMotion } from "@/lib/live2d-emotion";
-import { createSavedExpressionStack, SAVED_EXPRESSION_STACK_FILE, SAVED_EXPRESSION_STACK_NAME } from "@/lib/live2d-expression-stack";
+import { createExpressionStack, loadExpressionParameterSets, SAVED_EXPRESSION_STACK_FILE, SAVED_EXPRESSION_STACK_NAME } from "@/lib/live2d-expression-stack";
 import { MODEL_CONFIG, type ModelKey } from "@/lib/models";
 import { createModelResources, importModelFiles, loadModelCatalog, hydrateModelPackage, modelCatalogEntry, readModelSelection, resolveStartupModel, writeModelSelection, removeModelPackage, saveModelPackage, type ModelPackage, type ModelMotion } from "@/lib/local-models";
 import { getCloudModels, cloudModelPlaceholder, uploadCloudModel, downloadCloudModel, deleteCloudModel, saveCloudModelPreference, saveCloudModelExpressions, type CloudLibrary } from "@/lib/cloud-models";
@@ -304,6 +304,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
   const pendingExpressionPreferencesRef = useRef(new Map<string, string[]>());
   const expressionSaveQueuesRef = useRef(new Map<string, Promise<void>>());
   const expressionSaveVersionsRef = useRef(new Map<string, number>());
+  const aiExpressionStacksRef = useRef(new Map<string, Map<string, string>>());
   const [activeMotion, setActiveMotion] = useState<string | null>(null);
   const modelFolderRef = useRef<HTMLInputElement>(null);
   const activePackage = modelPackages.find((pack) => pack.models.some((model) => model.id === activeModelId));
@@ -747,26 +748,6 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     finally { setModelImporting(false); }
   }
 
-  async function selectExpression(expression: string | null) {
-    if (expression === null) { resetReaction(); return; }
-    const actionId = ++expressionActionRef.current;
-    const loadId = modelLoadIdRef.current;
-    try {
-      if (!modelRef.current) return;
-      setModelNotice(null);
-      // Select immediately so a second click can cancel an expression still loading.
-      setActiveExpression(expression);
-      const started = await modelRef.current.expression(expression);
-      if (actionId !== expressionActionRef.current || loadId !== modelLoadIdRef.current) return;
-      if (!started) throw new Error("Expression unavailable");
-    } catch {
-      if (actionId === expressionActionRef.current && loadId === modelLoadIdRef.current) {
-        resetReaction();
-        setModelNotice("This expression could not be played.");
-      }
-    }
-  }
-
   function toggleSavedExpression(expression: string) {
     if (!activeModel || !activePackage || !activeModel.expressions.includes(expression)) return;
     const current = activeExpressionModelRef.current === activeModel.id ? activeExpressionsRef.current : [];
@@ -976,7 +957,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     const textureAbort = new AbortController();
     modelRenderAbortRef.current = textureAbort;
     let releaseResources: (() => void) | undefined;
-    let compositeExpressionUrl: string | undefined;
+    const compositeExpressionUrls = new Map<string, string>();
     let app: any;
     let resizeModel = () => {};
     let queueResize = () => {};
@@ -1064,7 +1045,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         activeExpressionModelRef.current = renderModel.id;
         setActiveExpressions(selectedExpressions);
         setActiveExpressionsModelId(renderModel.id);
-        const shouldApplyStack = selectedExpressions.length > 0;
+        let shouldApplyStack = false;
         renderTiming = startTiming("model_load_to_first_frame");
         const resources = await createModelResources(renderPackage, renderModel, {
           // GPU limits alone do not account for framebuffers, decoded images,
@@ -1076,19 +1057,47 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
         });
         releaseResources = () => {
           resources.dispose();
-          if (compositeExpressionUrl) { URL.revokeObjectURL(compositeExpressionUrl); compositeExpressionUrl = undefined; }
+          for (const url of compositeExpressionUrls.values()) URL.revokeObjectURL(url);
+          compositeExpressionUrls.clear();
         };
         if (disposed || loadId !== modelLoadIdRef.current) { releaseResources(); return; }
         let manifest = resources.manifest;
         let resolveModelAsset = resources.resolve;
-        if (shouldApplyStack) {
-          const stack = await createSavedExpressionStack(resources.manifest.FileReferences.Expressions ?? [], selectedExpressions, resources.resolve);
+        if (selectedExpressions.length) {
+          const expressionDefinitions = resources.manifest.FileReferences.Expressions ?? [];
+          const parameterSets = await loadExpressionParameterSets(expressionDefinitions, resources.resolve);
+          const stackSelections = selectedExpressions.filter((name) => parameterSets.has(name));
+          if (stackSelections.length !== selectedExpressions.length) setModelNotice("Some saved expressions are unavailable in this model copy.");
+          const stack = createExpressionStack(parameterSets, stackSelections);
           if (stack) {
-            compositeExpressionUrl = URL.createObjectURL(stack);
-            const expressions = (resources.manifest.FileReferences.Expressions ?? []).filter((item) => item.Name !== SAVED_EXPRESSION_STACK_NAME);
-            manifest = { ...resources.manifest, FileReferences: { ...resources.manifest.FileReferences, Expressions: [...expressions, { Name: SAVED_EXPRESSION_STACK_NAME, File: SAVED_EXPRESSION_STACK_FILE }] } };
-            resolveModelAsset = (reference) => reference === SAVED_EXPRESSION_STACK_FILE ? compositeExpressionUrl! : resources.resolve(reference);
+            shouldApplyStack = true;
+            compositeExpressionUrls.set(SAVED_EXPRESSION_STACK_FILE, URL.createObjectURL(stack));
+            const expressions = expressionDefinitions.filter((item) => item.Name !== SAVED_EXPRESSION_STACK_NAME);
+            const emotionStackNames = new Map<string, string>();
+            const emotionDefinitions: Array<{ Name: string; File: string }> = [];
+            for (const [index, definition] of expressionDefinitions.entries()) {
+              if (stackSelections.includes(definition.Name)) {
+                emotionStackNames.set(definition.Name, SAVED_EXPRESSION_STACK_NAME);
+                continue;
+              }
+              const combined = createExpressionStack(parameterSets, [...stackSelections, definition.Name]);
+              if (!combined) continue;
+              const name = `__VivianSavedEmotionStack${index}__`;
+              const file = `__vivian_saved_emotion_stack_${index}.exp3.json`;
+              compositeExpressionUrls.set(file, URL.createObjectURL(combined));
+              emotionDefinitions.push({ Name: name, File: file });
+              emotionStackNames.set(definition.Name, name);
+            }
+            emotionStackNames.set(SAVED_EXPRESSION_STACK_NAME, SAVED_EXPRESSION_STACK_NAME);
+            aiExpressionStacksRef.current.set(renderModel.id, emotionStackNames);
+            manifest = { ...resources.manifest, FileReferences: { ...resources.manifest.FileReferences, Expressions: [...expressions, { Name: SAVED_EXPRESSION_STACK_NAME, File: SAVED_EXPRESSION_STACK_FILE }, ...emotionDefinitions] } };
+            resolveModelAsset = (reference) => compositeExpressionUrls.get(reference) ?? resources.resolve(reference);
+          } else {
+            setModelNotice("Saved expressions could not be combined with this model.");
+            aiExpressionStacksRef.current.delete(renderModel.id);
           }
+        } else {
+          aiExpressionStacksRef.current.delete(renderModel.id);
         }
         const settings = new Cubism4ModelSettings(manifest);
         settings.resolveURL = resolveModelAsset;
@@ -1100,7 +1109,7 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
           releaseResources();
           return;
         }
-        if (shouldApplyStack && !await model.expression(SAVED_EXPRESSION_STACK_NAME)) throw new Error("Could not apply saved expressions.");
+        if (shouldApplyStack && !await model.expression(SAVED_EXPRESSION_STACK_NAME)) setModelNotice("Saved expressions could not be applied to this model.");
         if (canvasRef.current) {
           const stopWind = attachModelWind(canvasRef.current, model.internalModel as unknown as WindInternalModel);
           model.once("destroy", stopWind);
@@ -1580,7 +1589,8 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
       }
     } catch (error) { console.warn("Live2D default expression unavailable", error); }
     const saved = activeExpressionModelRef.current === activeModelIdRef.current ? activeExpressionsRef.current : [];
-    if (saved.length) void modelRef.current?.expression(SAVED_EXPRESSION_STACK_NAME).catch((error: unknown) => console.warn("Saved Live2D expressions unavailable", error));
+    const hasSavedStack = activeModelIdRef.current ? aiExpressionStacksRef.current.get(activeModelIdRef.current)?.has(SAVED_EXPRESSION_STACK_NAME) : false;
+    if (saved.length && hasSavedStack) void modelRef.current?.expression(SAVED_EXPRESSION_STACK_NAME).catch((error: unknown) => console.warn("Saved Live2D expressions unavailable", error));
   }
   function stopLipSync() {
     if (lipSyncFrameRef.current !== null) cancelAnimationFrame(lipSyncFrameRef.current);
@@ -1879,7 +1889,16 @@ export default function Companion({ accountEmail, accountId }: { accountEmail: s
     const emotion = situationEmotion(reply, userText, mood, intensity, idle);
     const expression = resolveLive2DExpression(emotion, supportedExpressions);
     try {
-      if (expression) { await model.expression(expression); setActiveExpression(expression); }
+      if (expression) {
+        const expressionStacks = activeModel ? aiExpressionStacksRef.current.get(activeModel.id) : undefined;
+        const stackedName = expressionStacks?.get(expression);
+        if (expressionStacks?.has(SAVED_EXPRESSION_STACK_NAME) && !stackedName) {
+          await model.expression(SAVED_EXPRESSION_STACK_NAME);
+        } else {
+          const applied = await model.expression(stackedName ?? expression);
+          if (applied) setActiveExpression(expression);
+        }
+      }
       else if (!supportedExpressions.length) resetReaction();
       const definitions = model.internalModel?.motionManager?.definitions ?? {};
       const groups = Object.keys(definitions).filter((name) => Array.isArray(definitions[name]) && definitions[name].length);
